@@ -37,6 +37,7 @@ def getPrinter():
         printer = line.split(" ")[1]
         if "zebra" in printer.lower():
             return printer
+    die("Cannot find any Zebra printer")
 
 def getSize(page):
     box = page.cropBox
@@ -50,7 +51,6 @@ def getRotation(page: PyPDF2.pdf.PageObject):
 
 def die(msg):
     print(msg,file=sys.stderr)
-    notify(msg)
     sys.exit(1)
 
 
@@ -99,8 +99,9 @@ def processPdfFile(pdfFile):
         outPage.mergeRotatedScaledTranslatedPage(
             inPage, 360 - rotation, scale_factor, shift_x, shift_y, False
         )
+        outPage.compressContentStreams()
 
-    outPdfFile = pdfFile + "_print.pdf"
+    outPdfFile = os.path.splitext(pdfFile)[0] + "_print.pdf"
     with open(outPdfFile, "wb") as f:
         outPdf.write(f)
 
@@ -112,16 +113,23 @@ def printPdf(pdfFile, width, height, printer):
 
 
 if __name__ == "__main__":
-    printer = getPrinter()
-    print(f"Using printer {printer}")
+
     try:
         pdfFile = sys.argv[1]
-    except:
-        die("1st arg is PDF file")
+        if not os.path.exists(pdfFile):
+            raise Exception(f"{pdfFile} doesn't exist")
+    except Exception as e:
+        die(f"1st arg must be a PDF file:\n{e}")
+
+    printer = getPrinter()
+    print(f"Using printer {printer}")
 
     filename = os.path.basename(pdfFile)
 
-    outPdfFile, print_width, print_height, info = processPdfFile(pdfFile)
+    try:
+        outPdfFile, print_width, print_height, info = processPdfFile(pdfFile)
+    except Exception as e:
+        die(f"Could not process >{pdfFile}<:\n{e}")
 
     if len(sys.argv) > 2 and sys.argv[2] == "-noprint":
         notify(info, title=f"Not Printing on {printer}: " + filename)
@@ -129,6 +137,3 @@ if __name__ == "__main__":
         printPdf(outPdfFile, print_width, print_height, printer)
         os.remove(outPdfFile)
         notify(info, title=f"Printing on {printer}: " + filename)
-
-
-

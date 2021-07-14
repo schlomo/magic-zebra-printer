@@ -42,6 +42,10 @@ For Linux and Windows I'm happy to accept your contribution with a suitable inte
 
 Simple open a PDF file with the Zebra Printer application or use the Zebra Printer service or PDF Service with it.
 
+On the command line pass the PDF file to print as the first argument. Optionally pass `-noprint` as second argument to suppress printing. It will leave the intermediate file for you to examine (next to the original file).
+
+To set the printer (instead of using the first printer to contain "zebra" in its name), set the `MAGIC_ZEBRA_PRINTER` environment variable with the name of the desired printer.
+
 ## Bugs
 
 Lots. Not much error handling, no tests and I have no clue about MacOS internals and "just got it to work". So I'll be happy to get any feedback.
