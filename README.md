@@ -14,13 +14,15 @@ My problem is that I use it to print all sorts of shipping labels or other small
 
 ## Installation
 
-1. Make sure to have Python 3.6 or later installed.
+1. Install the prerequisites with `brew install imagemagick potrace`
 
-2. Checkout this Git repo into a directory of your choice, I use `/Users/schlomoschapiro/src/magic-zebra-printer` and you will have to adjust that later.
+2. Make sure to have Python 3.6 or later installed.
 
-3. Create a Python 3 Virtual Environment named `venv` via `python3 -m venv venv`.
+3. Checkout this Git repo into a directory of your choice, I use `/Users/schlomoschapiro/src/magic-zebra-printer` and you will have to adjust that later.
 
-4. Activate it with `source venv/bin/activate` and install the Python module dependencies with `pip install -r requirements.txt`.
+4. Create a Python 3 Virtual Environment named `venv` via `python3 -m venv venv`.
+
+5. Activate it with `source venv/bin/activate` and install the Python module dependencies with `pip install -r requirements.txt`.
 
 For MacOS to install the integrations:
 

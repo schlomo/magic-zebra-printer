@@ -17,10 +17,22 @@
    limitations under the License.
 """
 
-import sys, os, PyPDF2, math
+import sys, os
+import PyPDF2, math
 from sh import lp, lpstat
 from notifypy import Notify
+try:
+    from sh import convert, identify
+except:
+    import sh 
+    convert = sh.Command("/usr/local/bin/convert")
+    identify = sh.Command("/usr/local/bin/identify")
 
+try:
+    from sh import mkbitmap
+except:
+    import sh
+    mkbitmap = sh.Command("/usr/local/bin/mkbitmap")
 
 def notify(msg, title="Printing"):
     notification = Notify(
@@ -29,6 +41,7 @@ def notify(msg, title="Printing"):
     )
     notification.message = msg
     notification.send(block=False)
+    print(f"{title}\n{msg}")
 
 def getPrinter():
     if "MAGIC_ZEBRA_PRINTER" in os.environ:
@@ -39,22 +52,70 @@ def getPrinter():
             return printer
     die("Cannot find any Zebra printer")
 
-def getSize(page):
-    box = page.cropBox
-    return (box.getWidth(), box.getHeight())
-
-def getRotation(page: PyPDF2.pdf.PageObject):
-    rotation = page.get("/Rotate")
-    if rotation is None:
-        rotation = 0
-    return rotation
-
 def die(msg):
     print(msg,file=sys.stderr)
     sys.exit(1)
 
+def viaConvert(anyFile, printer, shouldprint=True):
+    try:
+        from sh import convert, identify
+    except:
+        import sh 
+        convert = sh.Command("/usr/local/bin/convert")
+        identify = sh.Command("/usr/local/bin/identify")
 
-def processPdfFile(pdfFile):
+
+    density = 208
+    width = 4
+
+    basename = os.path.basename(anyFile)
+    outPdfFile = os.path.splitext(anyFile)[0] + "_print.pdf"
+
+    if "[" in identify(anyFile): 
+        # multi-image files have [x] for index
+        convertArgs = [ anyFile, "-colorspace", "LinearGray" ]
+    else:
+        convertArgs = [ 
+            mkbitmap(
+                convert(anyFile, "PNM:-"),
+                "-f", 2, 
+                "-s", 2, 
+                "-t", 0.48
+            ),
+            "-"
+        ]
+    convertArgs += [
+        "-units", "PixelsPerInch",
+        "-density", density,
+        "-resize", width * density,
+        "-compress", "LZW",
+        "PDF:" + outPdfFile
+    ]
+    convert(*convertArgs)
+    printres = identify("-density", density, outPdfFile).split(" ")[2]
+    # ['out.pdf', 'PDF', '832x653', '832x653+0+0', '16-bit', 'sRGB', '115083B', '0.030u', '0:00.019\n']
+    # → 832x653 or such
+    if shouldprint:
+        lp("-d", printer, "-t", basename, f"-o PageSize=Custom.{printres}", outPdfFile)
+        os.remove(outPdfFile)
+        return(f"{basename}: {printres}", f"Printing on {printer}")
+    else:
+        return(f"{basename} → {outPdfFile}: {printres}", f"Converted")
+
+
+
+def viaPYPDF2(pdfFile, printer, shouldprint=True):
+
+    def getSize(page):
+        box = page.cropBox
+        return (box.getWidth(), box.getHeight())
+
+    def getRotation(page: PyPDF2.pdf.PageObject):
+        rotation = page.get("/Rotate")
+        if rotation is None:
+            rotation = 0
+        return rotation
+
     inPdf = PyPDF2.PdfFileReader(open(pdfFile, "rb"))
     page = inPdf.getPage(0)
     rotation = getRotation(page)
@@ -90,8 +151,6 @@ def processPdfFile(pdfFile):
     shift_y *= scale_factor
 
     info = f"{width:.1f}×{height:.1f} {rotation}° ⇒ {print_width}x{print_height}\n▶ {shift_x:.1f},{shift_y:.1f} {scale_factor:.1%}"
-    print(pdfFile)
-    print(info)
 
     outPdf = PyPDF2.PdfFileWriter()
     for inPage in inPdf.pages:
@@ -101,39 +160,36 @@ def processPdfFile(pdfFile):
         )
         outPage.compressContentStreams()
 
+
     outPdfFile = os.path.splitext(pdfFile)[0] + "_print.pdf"
     with open(outPdfFile, "wb") as f:
         outPdf.write(f)
 
 
-    return outPdfFile, print_width, print_height, info
-
-def printPdf(pdfFile, width, height, printer):
-    lp("-d", printer, "-o", f"PageSize=Custom.{width}x{height}", pdfFile)
+    if shouldprint:
+        lp("-d", printer, "-o", f"PageSize=Custom.{print_width}x{print_height}", outPdfFile)
+        os.remove(outPdfFile)
+        return (info, f"Printing on {printer}")
+    return (info, f"Converted {pdfFile} → {outPdfFile}" )
 
 
 if __name__ == "__main__":
-
     try:
-        pdfFile = sys.argv[1]
-        if not os.path.exists(pdfFile):
-            raise Exception(f"{pdfFile} doesn't exist")
+        anyFile = sys.argv[1]
+        if not os.path.exists(anyFile):
+            raise Exception(f"{anyFile} doesn't exist")
     except Exception as e:
-        die(f"1st arg must be a PDF file:\n{e}")
+        die(f"1st arg must be a file:\n{e}")
 
     printer = getPrinter()
     print(f"Using printer {printer}")
 
-    filename = os.path.basename(pdfFile)
+    shouldprint = not (len(sys.argv) > 2 and sys.argv[2] == "-noprint")
 
-    try:
-        outPdfFile, print_width, print_height, info = processPdfFile(pdfFile)
-    except Exception as e:
-        die(f"Could not process >{pdfFile}<:\n{e}")
-
-    if len(sys.argv) > 2 and sys.argv[2] == "-noprint":
-        notify(info, title=f"Not Printing on {printer}: " + filename)
+    suffix = os.path.splitext(anyFile)[1].lower()
+    if ".pdf" in suffix:
+        (msg, title) = viaPYPDF2(anyFile, printer, shouldprint)
     else:
-        printPdf(outPdfFile, print_width, print_height, printer)
-        os.remove(outPdfFile)
-        notify(info, title=f"Printing on {printer}: " + filename)
+        (msg, title) = viaConvert(anyFile, printer, shouldprint)
+
+    notify(msg, title)
