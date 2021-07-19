@@ -21,10 +21,12 @@ import sys, os
 import PyPDF2, math
 from sh import lp, lpstat
 from notifypy import Notify
+
 try:
     from sh import convert, identify
 except:
-    import sh 
+    import sh
+
     convert = sh.Command("/usr/local/bin/convert")
     identify = sh.Command("/usr/local/bin/identify")
 
@@ -32,7 +34,9 @@ try:
     from sh import mkbitmap
 except:
     import sh
+
     mkbitmap = sh.Command("/usr/local/bin/mkbitmap")
+
 
 def notify(msg, title="Printing"):
     notification = Notify(
@@ -43,6 +47,7 @@ def notify(msg, title="Printing"):
     notification.send(block=False)
     print(f"{title}\n{msg}")
 
+
 def getPrinter():
     if "MAGIC_ZEBRA_PRINTER" in os.environ:
         return os.environ.get("MAGIC_ZEBRA_PRINTER")
@@ -52,18 +57,20 @@ def getPrinter():
             return printer
     die("Cannot find any Zebra printer")
 
+
 def die(msg):
-    print(msg,file=sys.stderr)
+    print(msg, file=sys.stderr)
     sys.exit(1)
+
 
 def viaConvert(anyFile, printer, shouldprint=True):
     try:
         from sh import convert, identify
     except:
-        import sh 
+        import sh
+
         convert = sh.Command("/usr/local/bin/convert")
         identify = sh.Command("/usr/local/bin/identify")
-
 
     density = 208
     width = 4
@@ -71,25 +78,24 @@ def viaConvert(anyFile, printer, shouldprint=True):
     basename = os.path.basename(anyFile)
     outPdfFile = os.path.splitext(anyFile)[0] + "_print.pdf"
 
-    if "[" in identify(anyFile): 
+    if "[" in identify(anyFile):
         # multi-image files have [x] for index
-        convertArgs = [ anyFile, "-colorspace", "LinearGray" ]
+        convertArgs = [anyFile, "-colorspace", "LinearGray"]
     else:
-        convertArgs = [ 
-            mkbitmap(
-                convert(anyFile, "PNM:-"),
-                "-f", 2, 
-                "-s", 2, 
-                "-t", 0.48
-            ),
-            "-"
+        convertArgs = [
+            mkbitmap(convert(anyFile, "PNM:-"), "-f", 2, "-s", 2, "-t", 0.48),
+            "-",
         ]
     convertArgs += [
-        "-units", "PixelsPerInch",
-        "-density", density,
-        "-resize", width * density,
-        "-compress", "LZW",
-        "PDF:" + outPdfFile
+        "-units",
+        "PixelsPerInch",
+        "-density",
+        density,
+        "-resize",
+        width * density,
+        "-compress",
+        "LZW",
+        "PDF:" + outPdfFile,
     ]
     convert(*convertArgs)
     printres = identify("-density", density, outPdfFile).split(" ")[2]
@@ -98,14 +104,12 @@ def viaConvert(anyFile, printer, shouldprint=True):
     if shouldprint:
         lp("-d", printer, "-t", basename, f"-o PageSize=Custom.{printres}", outPdfFile)
         os.remove(outPdfFile)
-        return(f"{basename}: {printres}", f"Printing on {printer}")
+        return (f"{basename}: {printres}", f"Printing on {printer}")
     else:
-        return(f"{basename} → {outPdfFile}: {printres}", f"Converted")
-
+        return (f"{basename} → {outPdfFile}: {printres}", f"Converted")
 
 
 def viaPYPDF2(pdfFile, printer, shouldprint=True):
-
     def getSize(page):
         box = page.cropBox
         return (box.getWidth(), box.getHeight())
@@ -160,17 +164,21 @@ def viaPYPDF2(pdfFile, printer, shouldprint=True):
         )
         outPage.compressContentStreams()
 
-
     outPdfFile = os.path.splitext(pdfFile)[0] + "_print.pdf"
     with open(outPdfFile, "wb") as f:
         outPdf.write(f)
 
-
     if shouldprint:
-        lp("-d", printer, "-o", f"PageSize=Custom.{print_width}x{print_height}", outPdfFile)
+        lp(
+            "-d",
+            printer,
+            "-o",
+            f"PageSize=Custom.{print_width}x{print_height}",
+            outPdfFile,
+        )
         os.remove(outPdfFile)
         return (info, f"Printing on {printer}")
-    return (info, f"Converted {pdfFile} → {outPdfFile}" )
+    return (info, f"Converted {pdfFile} → {outPdfFile}")
 
 
 if __name__ == "__main__":
