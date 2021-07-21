@@ -16,6 +16,7 @@
    See the License for the specific language governing permissions and
    limitations under the License.
 """
+EXTRALENGTH = 10 # add this amount of pts to every page
 
 import sys, os
 import PyPDF2, math
@@ -79,9 +80,10 @@ def viaConvert(anyFile, printer, shouldprint=True):
     outPdfFile = os.path.splitext(anyFile)[0] + "_print.pdf"
 
     if "[" in identify(anyFile):
-        # multi-image files have [x] for index
+        # multi-image files have [x] for index, convert to PDF
         convertArgs = [anyFile, "-colorspace", "LinearGray"]
     else:
+        # single-image files, convert to PNM and optimize with mkbitmap first
         convertArgs = [
             mkbitmap(convert(anyFile, "PNM:-"), "-f", 2, "-s", 2, "-t", 0.48),
             "-",
@@ -93,16 +95,21 @@ def viaConvert(anyFile, printer, shouldprint=True):
         density,
         "-resize",
         width * density,
-        "-compress",
-        "LZW",
+        #"-compress",
+        #"LZW",
         "PDF:" + outPdfFile,
     ]
     convert(*convertArgs)
-    printres = identify("-density", density, outPdfFile).split(" ")[2]
-    # ['out.pdf', 'PDF', '832x653', '832x653+0+0', '16-bit', 'sRGB', '115083B', '0.030u', '0:00.019\n']
+    # /Users/schlomoschapiro/Downloads/2021-07-20 at 16_print.pdf PDF 8x14 8x14+0+0 16-bit sRGB 2597B 0.000u 0:00.000
+    identify_result = str(identify("-density", density, outPdfFile))[len(outPdfFile):] # cut off filename from result
+    printres = identify_result.split(" ")[2]
+    # we use " PDF " to split file name and result
     # → 832x653 or such
     if shouldprint:
-        lp("-d", printer, "-t", basename, f"-o PageSize=Custom.{printres}", outPdfFile)
+        print_width, print_height = printres.split("x")
+        # make sure that page size is at least EXTRALENGTH pts higher than image
+        print_height = math.ceil(float(print_height)) + EXTRALENGTH
+        lp("-d", printer, "-t", basename, f"-o PageSize=Custom.{print_width}x{print_height}", outPdfFile)
         os.remove(outPdfFile)
         return (f"{basename}: {printres}", f"Printing on {printer}")
     else:
