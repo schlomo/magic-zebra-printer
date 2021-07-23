@@ -16,7 +16,6 @@
    See the License for the specific language governing permissions and
    limitations under the License.
 """
-EXTRALENGTH = 10 # add this amount of pts to every page
 
 import sys, os
 import PyPDF2, math
@@ -107,8 +106,7 @@ def viaConvert(anyFile, printer, shouldprint=True):
     # → 832x653 or such
     if shouldprint:
         print_width, print_height = printres.split("x")
-        # make sure that page size is at least EXTRALENGTH pts higher than image
-        print_height = math.ceil(float(print_height)) + EXTRALENGTH
+        print_height = math.ceil(float(print_height))
         lp("-d", printer, "-t", basename, f"-o PageSize=Custom.{print_width}x{print_height}", outPdfFile)
         os.remove(outPdfFile)
         return (f"{basename}: {printres}", f"Printing on {printer}")
