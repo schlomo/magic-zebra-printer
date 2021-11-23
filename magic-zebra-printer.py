@@ -27,15 +27,15 @@ try:
 except:
     import sh
 
-    convert = sh.Command("/usr/local/bin/convert")
-    identify = sh.Command("/usr/local/bin/identify")
+    convert = sh.Command("/opt/homebrew/bin/convert")
+    identify = sh.Command("/opt/homebrew/bin/identify")
 
 try:
     from sh import mkbitmap
 except:
     import sh
 
-    mkbitmap = sh.Command("/usr/local/bin/mkbitmap")
+    mkbitmap = sh.Command("/opt/homebrew/bin/mkbitmap")
 
 
 def notify(msg, title="Printing"):
@@ -64,14 +64,6 @@ def die(msg):
 
 
 def viaConvert(anyFile, printer, shouldprint=True):
-    try:
-        from sh import convert, identify
-    except:
-        import sh
-
-        convert = sh.Command("/usr/local/bin/convert")
-        identify = sh.Command("/usr/local/bin/identify")
-
     density = 208
     width = 4
 

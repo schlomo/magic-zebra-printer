@@ -10,7 +10,7 @@ My problem is that I use it to print all sorts of shipping labels or other small
 * Determine the page length required for the print job
 * Determine the printer (looking for `Zebra*`) to use
 * Should work on Mac, Linux & Windows
-* Includes PDF Service and Service and Application for MacOS
+* Includes PDF Service, Service and Application for MacOS
 
 ## Installation
 
@@ -26,7 +26,7 @@ My problem is that I use it to print all sorts of shipping labels or other small
 
 For MacOS to install the integrations:
 
-1. Copy the content of [Applications](Applications) to your `$HOME` directory. 
+1. Copy the content of [macos](macos) to your `$HOME` directory.
 
 2. Edit to each of the following files and adjust the path to your Git checkout:
 
