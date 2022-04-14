@@ -7,5 +7,5 @@ Exec=/bin/bash --noprofile -c "source venv/bin/activate ; python magic-zebra-pri
 Terminal=false
 Icon=/home/schlomo/src/magic-zebra-printer/magic-zebra-printer.png
 Path=/home/schlomo/src/magic-zebra-printer
-Categories=Utilities
+Categories=Utility
 MimeType=application/pdf;image/png;image/jpeg
