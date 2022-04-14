@@ -59,7 +59,7 @@ def getPrinter():
 
 
 def die(msg):
-    print(msg, file=sys.stderr)
+    print(f"ERROR: {msg}", file=sys.stderr)
     sys.exit(1)
 
 
@@ -183,8 +183,11 @@ if __name__ == "__main__":
         anyFile = sys.argv[1]
         if not os.path.exists(anyFile):
             raise Exception(f"{anyFile} doesn't exist")
+    except IndexError:
+        die(f"1st arg >{anyFile}< must be a file")
+
     except Exception as e:
-        die(f"1st arg must be a file:\n{e}")
+        die(f"1st arg >{anyFile}< must be a file:\n{e}")
 
     printer = getPrinter()
     print(f"Using printer {printer}")

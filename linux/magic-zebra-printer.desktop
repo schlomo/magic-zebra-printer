@@ -1,0 +1,11 @@
+[Desktop Entry]
+Name=Magic Zebra Printer
+GenericName=Magic Zebra Printer
+Comment=Optimized printing of PDF and Image files on Zebra label printer with continuous media
+Type=Application
+Exec=/bin/bash --noprofile -c "source venv/bin/activate ; python magic-zebra-printer.py %f"
+Terminal=false
+Icon=/home/schlomo/src/magic-zebra-printer/magic-zebra-printer.png
+Path=/home/schlomo/src/magic-zebra-printer
+Categories=Utilities
+MimeType=application/pdf;image/png;image/jpeg

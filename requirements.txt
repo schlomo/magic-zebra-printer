@@ -2,3 +2,4 @@ pypdf2
 sh
 notify-py
 desktop-notifier
+black
