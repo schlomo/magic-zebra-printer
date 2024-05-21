@@ -18,7 +18,7 @@
 """
 
 import sys, os
-import PyPDF2, math
+import pypdf, math
 from sh import lp, lpstat
 from notifypy import Notify
 
@@ -70,16 +70,7 @@ def viaConvert(anyFile, printer, shouldprint=True):
     basename = os.path.basename(anyFile)
     outPdfFile = os.path.splitext(anyFile)[0] + "_print.pdf"
 
-    if "[" in identify(anyFile):
-        # multi-image files have [x] for index, convert to PDF
-        convertArgs = [anyFile, "-colorspace", "LinearGray"]
-    else:
-        # single-image files, convert to PNM and optimize with mkbitmap first
-        convertArgs = [
-            mkbitmap(convert(anyFile, "PNM:-"), "-f", 2, "-s", 2, "-t", 0.48),
-            "-",
-        ]
-    convertArgs += [
+    convertCommonArgs = [
         "-units",
         "PixelsPerInch",
         "-density",
@@ -88,9 +79,18 @@ def viaConvert(anyFile, printer, shouldprint=True):
         width * density,
         #"-compress",
         #"LZW",
-        "PDF:" + outPdfFile,
+        "PDF:" + outPdfFile
     ]
-    convert(*convertArgs)
+
+    if "[" in identify(anyFile):
+        # multi-image files have [x] for index, convert to PDF
+        convertArgs = [anyFile, "-colorspace", "LinearGray"] + convertCommonArgs
+        convert(*convertArgs)
+    else:
+        # single-image files, convert to PNM and optimize with mkbitmap first
+        convertArgs = ["-"] + convertCommonArgs
+        convert(*convertArgs, _in=mkbitmap("-f", 2, "-s", 2, "-t", 0.48, _in=convert(anyFile, "PNM:-", _piped=True), _piped=True))
+
     # /Users/schlomoschapiro/Downloads/2021-07-20 at 16_print.pdf PDF 8x14 8x14+0+0 16-bit sRGB 2597B 0.000u 0:00.000
     identify_result = str(identify("-density", density, outPdfFile))[len(outPdfFile):] # cut off filename from result
     printres = identify_result.split(" ")[2]
@@ -106,39 +106,37 @@ def viaConvert(anyFile, printer, shouldprint=True):
         return (f"{basename} → {outPdfFile}: {printres}", f"Converted")
 
 
-def viaPYPDF2(pdfFile, printer, shouldprint=True):
+def viaPYPDF(pdfFile, printer, shouldprint=True):
     def getSize(page):
-        box = page.cropBox
-        return (box.getWidth(), box.getHeight())
+        box = page.mediabox
+        return (box.width, box.height)
 
-    def getRotation(page: PyPDF2.pdf.PageObject):
-        rotation = page.get("/Rotate")
-        if rotation is None:
-            rotation = 0
+    def getRotation(page):
+        rotation = page.get("/Rotate", 0)
         return rotation
 
-    inPdf = PyPDF2.PdfFileReader(open(pdfFile, "rb"))
-    page = inPdf.getPage(0)
+    reader = pypdf.PdfReader(pdfFile)
+    page = reader.pages[0]
     rotation = getRotation(page)
 
     if rotation == 0:
         width, height = getSize(page)
-        (shift_x, shift_y) = page.cropBox.lowerLeft
+        (shift_x, shift_y) = page.mediabox.lower_left
         shift_x *= -1
         shift_y *= -1
 
     elif rotation == 270:
         height, width = getSize(page)
-        (shift_y, shift_x) = page.cropBox.upperLeft
+        (shift_y, shift_x) = page.mediabox.upper_left
         shift_y *= -1
 
     elif rotation == 180:
         width, height = getSize(page)
-        (shift_x, shift_y) = page.cropBox.upperRight
+        (shift_x, shift_y) = page.mediabox.upper_right
 
     elif rotation == 90:
         height, width = getSize(page)
-        (shift_y, shift_x) = page.cropBox.lowerRight
+        (shift_y, shift_x) = page.mediabox.lower_right
         shift_x *= -1
 
     else:
@@ -153,17 +151,27 @@ def viaPYPDF2(pdfFile, printer, shouldprint=True):
 
     info = f"{width:.1f}×{height:.1f} {rotation}° ⇒ {print_width}x{print_height}\n▶ {shift_x:.1f},{shift_y:.1f} {scale_factor:.1%}"
 
-    outPdf = PyPDF2.PdfFileWriter()
-    for inPage in inPdf.pages:
-        outPage = outPdf.addBlankPage(print_width, print_height)
-        outPage.mergeRotatedScaledTranslatedPage(
-            inPage, 360 - rotation, scale_factor, shift_x, shift_y, False
-        )
-        outPage.compressContentStreams()
+    writer = pypdf.PdfWriter()
+    for inPage in reader.pages:
+        outPage = writer.add_blank_page(width=print_width, height=print_height)
+        
+        # Rotate the page
+        if rotation != 0:
+            inPage.rotate(-rotation)
+        
+        # Create a transformation matrix for scaling and translation
+        transformation_matrix = [
+            scale_factor, 0, 0,
+            scale_factor, shift_x, shift_y
+        ]
+        
+        # Apply the transformation to the page
+        outPage.merge_transformed_page(inPage, transformation_matrix)
+        outPage.compress_content_streams()
 
     outPdfFile = os.path.splitext(pdfFile)[0] + "_print.pdf"
     with open(outPdfFile, "wb") as f:
-        outPdf.write(f)
+        writer.write(f)
 
     if shouldprint:
         lp(
@@ -189,14 +197,18 @@ if __name__ == "__main__":
     except Exception as e:
         die(f"1st arg >{anyFile}< must be a file:\n{e}")
 
-    printer = getPrinter()
-    print(f"Using printer {printer}")
-
     shouldprint = not (len(sys.argv) > 2 and sys.argv[2] == "-noprint")
+
+    if shouldprint:
+        printer = getPrinter()
+        print(f"Using printer {printer}")
+    else:
+        printer = "NONE"
+        print("Not printing")
 
     suffix = os.path.splitext(anyFile)[1].lower()
     if ".pdf" in suffix:
-        (msg, title) = viaPYPDF2(anyFile, printer, shouldprint)
+        (msg, title) = viaPYPDF(anyFile, printer, shouldprint)
     else:
         (msg, title) = viaConvert(anyFile, printer, shouldprint)
 

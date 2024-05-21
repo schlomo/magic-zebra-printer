@@ -1,4 +1,4 @@
-pypdf2
+pypdf
 sh
 notify-py
 desktop-notifier
