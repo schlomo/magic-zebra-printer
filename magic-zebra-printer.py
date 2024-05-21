@@ -51,7 +51,10 @@ def notify(msg, title="Printing"):
 def getPrinter():
     if "MAGIC_ZEBRA_PRINTER" in os.environ:
         return os.environ.get("MAGIC_ZEBRA_PRINTER")
-    for line in filter(lambda l: "idle" in l, lpstat("-p")):
+    lines = lpstat("-p").split("\n")
+    for line in lines:
+        if not "idle" in line:
+            continue
         printer = line.split(" ")[1]
         if "zebra" in printer.lower():
             return printer
