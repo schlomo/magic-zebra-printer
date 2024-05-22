@@ -59,7 +59,7 @@
 				<key>ActionParameters</key>
 				<dict>
 					<key>COMMAND_STRING</key>
-					<string>cd /Users/schlomoschapiro/src/magic-zebra-printer
+					<string>cd /Users/schlomo/src/magic-zebra-printer
 source venv/bin/activate
 exec python3 magic-zebra-printer.py "$1"</string>
 					<key>CheckedForUserDefaultShell</key>
