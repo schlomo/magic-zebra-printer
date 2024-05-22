@@ -108,69 +108,36 @@ def viaConvert(anyFile, printer, shouldprint=True):
     else:
         return (f"{basename} → {outPdfFile}: {printres}", f"Converted")
 
-
 def viaPYPDF(pdfFile, printer, shouldprint=True):
+
     def getSize(page):
         box = page.mediabox
         return (box.width, box.height)
 
-    def getRotation(page):
-        rotation = page.get("/Rotate", 0)
-        return rotation
-
     reader = pypdf.PdfReader(pdfFile)
-    page = reader.pages[0]
-    rotation = getRotation(page)
-
-    if rotation == 0:
-        width, height = getSize(page)
-        (shift_x, shift_y) = page.mediabox.lower_left
-        shift_x *= -1
-        shift_y *= -1
-
-    elif rotation == 270:
-        height, width = getSize(page)
-        (shift_y, shift_x) = page.mediabox.upper_left
-        shift_y *= -1
-
-    elif rotation == 180:
-        width, height = getSize(page)
-        (shift_x, shift_y) = page.mediabox.upper_right
-
-    elif rotation == 90:
-        height, width = getSize(page)
-        (shift_y, shift_x) = page.mediabox.lower_right
-        shift_x *= -1
-
-    else:
-        die(f"BAD ROTATION {rotation}")
-
-    print_width = 4 * 72  # 4 inch * 72 points-per-inch
-    scale_factor = print_width / width
-    print_height = math.ceil(height * scale_factor)
-
-    shift_x *= scale_factor
-    shift_y *= scale_factor
-
-    info = f"{width:.1f}×{height:.1f} {rotation}° ⇒ {print_width}x{print_height}\n▶ {shift_x:.1f},{shift_y:.1f} {scale_factor:.1%}"
-
     writer = pypdf.PdfWriter()
-    for inPage in reader.pages:
-        outPage = writer.add_blank_page(width=print_width, height=print_height)
-        
-        # Rotate the page
-        if rotation != 0:
-            inPage.rotate(-rotation)
-        
-        # Create a transformation matrix for scaling and translation
-        transformation_matrix = [
-            scale_factor, 0, 0,
-            scale_factor, shift_x, shift_y
-        ]
-        
-        # Apply the transformation to the page
-        outPage.merge_transformed_page(inPage, transformation_matrix)
-        outPage.compress_content_streams()
+
+    print_width = 4 * 72  # 4 inches * 72 points-per-inch
+
+    for page in reader.pages:
+        rotation = page.rotation
+
+        if rotation > 0:
+            page.rotate(-rotation).transfer_rotation_to_content()
+
+        width, height = getSize(page)
+
+        if height < width:
+            page.rotate(90).transfer_rotation_to_content()
+            width, height = height, width
+
+        scale_factor = print_width / width
+        print_height = math.ceil(height * scale_factor)
+
+        page.scale_to(print_width, print_height)
+        writer.add_page(page)
+
+        info = f"{width:.1f}×{height:.1f} {rotation}° ⇒ {print_width}x{print_height} {scale_factor:.1%}"
 
     outPdfFile = os.path.splitext(pdfFile)[0] + "_print.pdf"
     with open(outPdfFile, "wb") as f:
