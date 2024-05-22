@@ -77,5 +77,6 @@ To set the printer (instead of using the first printer to contain "zebra" in its
 ## Bugs
 
 * Not much error handling, no tests
+* No proper installation, but runs from git checkout
 * I have no clue about MacOS internals and "just got it to work". So I'll be happy to get any feedback.
 * I couldn't find a way to create a convenient drag-drop target on Linux, feedback & ideas are welcome.
