@@ -6,11 +6,11 @@ My Zebra label printer has a roll of continuous paper and a cutter so that it ca
 
 My problem is that I use it to print all sorts of shipping labels or other small info pages that have different page sizes. Previously I used to create many different custom page sizes to accomodate different print jobs. With this script everything happens automatically:
 
-* Scale down the page to 4 inch wide
+* Scale down the page to 4 inch wide and rotate landscape to portrait to maximize print size
 * Determine the page length required for the print job
 * Determine the printer (looking for `*zebra*`) to use
 * Should work on Mac, Linux & Windows
-* Includes PDF Service, Service and Application for MacOS
+* Includes PDF Service, Service and Application for MacOS. Application can be put into Dock as drag-n-drop target.
 
 ## Installation
 
@@ -35,6 +35,8 @@ My problem is that I use it to print all sorts of shipping labels or other small
     * `~/Applications/Zebra Printer.app/Contents/document.wflow`
 
    In each file, search for `/Users/schlomo/src/magic-zebra-printer` and replace it with the path where you checked out the Git repo.
+
+3. Open the "Privacy & Security" settings and add the `Zebra Printer` Application from your `$HOME/Applications` to the list of applications with *Full Disk Access*. This will enable drag and drop for the application without a security confirmation.
 
 Now you should be able to use the Zebra Printer as a PDF Print Action, as a Service in other apps and Finder and as a standalone application which can serve as a drag-and-drop target.
 

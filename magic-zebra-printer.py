@@ -67,46 +67,87 @@ def die(msg):
 
 
 def viaConvert(anyFile, printer, shouldprint=True):
-    density = 208
-    width = 4
+    printer_density = 208
+    printer_width = 4
+    print_width_pts = 4 * 72
+
+    def getSize(file):
+        identify_result = identify("-format", "%w %h", file)  # returns width and height
+        width, height = identify_result.split(" ")
+        return math.ceil(float(width)), math.ceil(float(height))
+
+    width, height = getSize(anyFile)
+    convert_to_pdf_args = []
+    rotation_info = ""
+    if height < width:
+        convert_to_pdf_args += ["-rotate", "90"]
+        width, height = height, width
+        rotation_info = "↺ "
 
     basename = os.path.basename(anyFile)
     outPdfFile = os.path.splitext(anyFile)[0] + "_print.pdf"
 
-    convertCommonArgs = [
+    convert_to_pdf_args += [
         "-units",
         "PixelsPerInch",
         "-density",
-        density,
+        printer_density,
         "-resize",
-        width * density,
-        #"-compress",
-        #"LZW",
-        "PDF:" + outPdfFile
+        printer_width * printer_density,
+        # "-compress",
+        # "LZW",
+        "PDF:" + outPdfFile,
     ]
 
     if "[" in identify(anyFile):
         # multi-image files have [x] for index, convert to PDF
-        convertArgs = [anyFile, "-colorspace", "LinearGray"] + convertCommonArgs
+        # TODO: split into single images to optimize via mkbitmap
+        convertArgs = [anyFile, "-colorspace", "LinearGray"] + convert_to_pdf_args
         convert(*convertArgs)
     else:
         # single-image files, convert to PNM and optimize with mkbitmap first
-        convertArgs = ["-"] + convertCommonArgs
-        convert(*convertArgs, _in=mkbitmap("-f", 2, "-s", 2, "-t", 0.48, _in=convert(anyFile, "PNM:-", _piped=True), _piped=True))
+        convertArgs = ["-"] + convert_to_pdf_args
+        # convert anyFile to PNM, pipe into mkbitmap, pipe into convert to PDF
+        convert(
+            *convertArgs,
+            _in=mkbitmap(
+                "-f",
+                2,
+                "-s",
+                2,
+                "-t",
+                0.48,
+                _in=convert(anyFile, "PNM:-", _piped=True),
+                _piped=True,
+            ),
+        )
 
-    # /Users/schlomoschapiro/Downloads/2021-07-20 at 16_print.pdf PDF 8x14 8x14+0+0 16-bit sRGB 2597B 0.000u 0:00.000
-    identify_result = str(identify("-density", density, outPdfFile))[len(outPdfFile):] # cut off filename from result
-    printres = identify_result.split(" ")[2]
-    # we use " PDF " to split file name and result
-    # → 832x653 or such
+    print_width, print_height = getSize(outPdfFile)
+
+    if print_width != print_width_pts:
+        print(
+            f"Print width error: {print_width} from output PDF file should be {print_width_pts}"
+        )
+
+    info = f"{width}×{height} {rotation_info}⇒ {print_width}x{print_height}"
+
     if shouldprint:
-        print_width, print_height = printres.split("x")
-        print_height = math.ceil(float(print_height))
-        lp("-d", printer, "-t", basename, f"-o PageSize=Custom.{print_width}x{print_height}", outPdfFile)
+        lp(
+            "-d",
+            printer,
+            "-t",
+            basename,
+            f"-o PageSize=Custom.{print_width}x{print_height}",
+            outPdfFile,
+        )
         os.remove(outPdfFile)
-        return (f"{basename}: {printres}", f"Printing on {printer}")
+        return (info, f"Printing {basename} on {printer}")
     else:
-        return (f"{basename} → {outPdfFile}: {printres}", f"Converted")
+        return (
+            info,
+            f"Converted {basename} → {outPdfFile}",
+        )
+
 
 def viaPYPDF(pdfFile, printer, shouldprint=True):
 
