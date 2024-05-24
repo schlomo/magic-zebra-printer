@@ -1,6 +1,9 @@
 # Magic Zebra Printer
 
-Simple script to automatically determine the paper length for a PDF file (based on the last page) and print it on a label printer. Also works for image files.
+*The blog article [My Magic Zebra Printer - Why Software Rules the World
+](https://schlomo.schapiro.org/2024/05/my-magic-zebra-printer-why-software.html) has a demo of Magic Zebra Printer in action*
+
+A simple script to automatically determine the paper length for an image or PDF file (based on the last page) and print it on a label printer.
 
 My Zebra label printer has a roll of continuous paper and a cutter so that it can print any page size by simply cutting off the paper at the appropriate length.
 
@@ -70,7 +73,7 @@ For Windows I'm happy to accept your contribution with a suitable integration.
 
 ## Usage
 
-Simple open a PDF file with the Magic Zebra Printer application or use the Zebra Printer service or PDF Service with it.
+Simple open a PDF file with the Magic Zebra Printer application (you can use drag and drop onto the launcher for this) or use the Zebra Printer service or PDF Service with it.
 
 On the command line pass the PDF file to print as the first argument. Optionally pass `-noprint` as second argument to suppress printing. It will leave the intermediate file for you to examine (next to the original file).
 
