@@ -737,7 +737,7 @@ def main():
     else:
         # Direct test files - only files starting with 'test'
         import pathlib
-        test_path = pathlib.Path('.')
+        test_path = pathlib.Path('test')
         
         # Find all files starting with 'test' (excluding _print.pdf files)
         for file_path in test_path.glob('test*.*'):
