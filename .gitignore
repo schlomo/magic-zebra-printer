@@ -1,3 +1,12 @@
-/venv
+venv/
+**/__pycache__/
+.DS_Store
+# Personal/private PDFs
+*_returnlabel.pdf
+*_label.pdf
+*_private.pdf
+# Test outputs
 *_print.pdf
 *~
+# Test reports
+test_reports/

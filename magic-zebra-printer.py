@@ -68,8 +68,10 @@ def die(msg):
 
 def viaConvert(anyFile, printer, shouldprint=True):
     printer_density = 208
-    printer_width = 4
-    print_width_pts = 4 * 72
+    # Use 10cm width like PDFs instead of 4 inches
+    printer_width_cm = 10.0
+    printer_width_inches = printer_width_cm / 2.54
+    print_width_pts = printer_width_cm * 72 / 2.54
 
     def getSize(file):
         identify_result = identify("-format", "%w %h", file)  # returns width and height
@@ -85,7 +87,13 @@ def viaConvert(anyFile, printer, shouldprint=True):
         rotation_info = "↺ "
 
     basename = os.path.basename(anyFile)
-    outPdfFile = os.path.splitext(anyFile)[0] + "_print.pdf"
+    # For non-PDF files, include the original extension in the output name to avoid conflicts
+    base_without_ext = os.path.splitext(anyFile)[0]
+    original_ext = os.path.splitext(anyFile)[1][1:]  # Extension without dot
+    if original_ext.lower() != 'pdf':
+        outPdfFile = f"{base_without_ext}_{original_ext}_print.pdf"
+    else:
+        outPdfFile = f"{base_without_ext}_print.pdf"
 
     convert_to_pdf_args += [
         "-units",
@@ -93,7 +101,7 @@ def viaConvert(anyFile, printer, shouldprint=True):
         "-density",
         printer_density,
         "-resize",
-        printer_width * printer_density,
+        f"{printer_width_inches * printer_density:.0f}",
         # "-compress",
         # "LZW",
         "PDF:" + outPdfFile,
@@ -124,9 +132,9 @@ def viaConvert(anyFile, printer, shouldprint=True):
 
     print_width, print_height = getSize(outPdfFile)
 
-    if print_width != print_width_pts:
+    if abs(print_width - print_width_pts) > 1:
         print(
-            f"Print width error: {print_width} from output PDF file should be {print_width_pts}"
+            f"Print width error: {print_width} from output PDF file should be {print_width_pts:.0f}"
         )
 
     info = f"{width}×{height} {rotation_info}⇒ {print_width}x{print_height}"
@@ -152,33 +160,131 @@ def viaConvert(anyFile, printer, shouldprint=True):
 def viaPYPDF(pdfFile, printer, shouldprint=True):
 
     def getSize(page):
-        box = page.mediabox
+        # Use cropbox instead of mediabox to respect cropping
+        box = page.cropbox
         return (box.width, box.height)
+
+    def printDebugInfo(page, stage, width, height, rotation):
+        print(f"\n{stage}:")
+        print(f"  Dimensions: {width:.1f}×{height:.1f}")
+        print(f"  Rotation: {rotation}°")
+        print(f"  CropBox: {page.cropbox}")
+        print(f"  MediaBox: {page.mediabox}")
 
     reader = pypdf.PdfReader(pdfFile)
     writer = pypdf.PdfWriter()
 
-    print_width = 4 * 72  # 4 inches * 72 points-per-inch
+    print_width = 10 * 72 / 2.54  # 10 cm * (72 points/inch) / (2.54 cm/inch)
+    print(f"\nTarget print width: {print_width:.1f} points ({print_width/72:.1f} inches)")
 
-    for page in reader.pages:
+    for page_num, page in enumerate(reader.pages):
+        print(f"\nProcessing page {page_num + 1}:")
+        
+        # Get initial state
         rotation = page.rotation
-
-        if rotation > 0:
-            page.rotate(-rotation).transfer_rotation_to_content()
-
         width, height = getSize(page)
+        printDebugInfo(page, "Initial state", width, height, rotation)
 
-        if height < width:
-            page.rotate(90).transfer_rotation_to_content()
+        # Create a new page with the same size as the cropped area
+        new_page = pypdf.PageObject.create_blank_page(
+            width=page.cropbox.width,
+            height=page.cropbox.height
+        )
+
+        # Calculate the transformation to map from media box to crop box
+        crop = page.cropbox
+        media = page.mediabox
+        
+        # Create transformation matrix
+        transform = pypdf.Transformation()
+        transform = transform.translate(-crop.left, -crop.bottom)
+        
+        # Copy the content with transformation
+        new_page.merge_transformed_page(page, transform)
+
+        # Handle rotation
+        if rotation == 90:
+            print(f"\nHandling 90° rotation:")
+            # For 90° rotation, we need to swap dimensions
             width, height = height, width
+            # Create a new page with swapped dimensions
+            rotated_page = pypdf.PageObject.create_blank_page(
+                width=width,
+                height=height
+            )
+            # Create transformation: rotate -90° (270°) and translate to center
+            transform = pypdf.Transformation()
+            transform = transform.rotate(-90).translate(0, height)
+            rotated_page.merge_transformed_page(new_page, transform)
+            new_page = rotated_page
+            printDebugInfo(new_page, "After rotation", width, height, 0)
+        elif rotation == 270 or rotation == -90:
+            print(f"\nHandling 270° rotation:")
+            # For 270° rotation, we need to swap dimensions
+            width, height = height, width
+            # Create a new page with swapped dimensions
+            rotated_page = pypdf.PageObject.create_blank_page(
+                width=width,
+                height=height
+            )
+            # Create transformation: rotate 90° and translate
+            transform = pypdf.Transformation()
+            transform = transform.rotate(90).translate(width, 0)
+            rotated_page.merge_transformed_page(new_page, transform)
+            new_page = rotated_page
+            printDebugInfo(new_page, "After rotation", width, height, 0)
+        elif rotation == 180 or rotation == -180:
+            print(f"\nHandling 180° rotation:")
+            # For 180° rotation, dimensions stay the same
+            # Create a new page with same dimensions
+            rotated_page = pypdf.PageObject.create_blank_page(
+                width=width,
+                height=height
+            )
+            # Create transformation: rotate 180° and translate
+            transform = pypdf.Transformation()
+            transform = transform.rotate(180).translate(width, height)
+            rotated_page.merge_transformed_page(new_page, transform)
+            new_page = rotated_page
+            printDebugInfo(new_page, "After rotation", width, height, 0)
+        elif rotation != 0:
+            print(f"\nHandling {rotation}° rotation:")
+            # For other rotations, use the existing rotate method
+            new_page.rotate(-rotation)
+            width, height = getSize(new_page)
+            printDebugInfo(new_page, "After rotation", width, height, 0)
 
+        # Check if we need to rotate landscape to portrait
+        if width > height:
+            print(f"\nHandling landscape to portrait rotation:")
+            # Swap dimensions
+            width, height = height, width
+            # Create a new page with swapped dimensions
+            rotated_page = pypdf.PageObject.create_blank_page(
+                width=width,
+                height=height
+            )
+            # Create transformation: rotate -90° and translate
+            transform = pypdf.Transformation()
+            transform = transform.rotate(-90).translate(0, height)
+            rotated_page.merge_transformed_page(new_page, transform)
+            new_page = rotated_page
+            printDebugInfo(new_page, "After landscape rotation", width, height, 0)
+
+        # Calculate scaling to fit the target width while maintaining aspect ratio
         scale_factor = print_width / width
         print_height = math.ceil(height * scale_factor)
 
-        page.scale_to(print_width, print_height)
-        writer.add_page(page)
+        print(f"\nScaling:")
+        print(f"  Original: {width:.1f}×{height:.1f}")
+        print(f"  Target: {print_width:.1f}×{print_height:.1f}")
+        print(f"  Scale factor: {scale_factor:.1%}")
 
-        info = f"{width:.1f}×{height:.1f} {rotation}° ⇒ {print_width}x{print_height} {scale_factor:.1%}"
+        # Apply scaling
+        new_page.scale_to(print_width, print_height)
+        writer.add_page(new_page)
+
+        info = f"{width:.1f}×{height:.1f} {rotation}° ⇒ {print_width:.1f}x{print_height:.1f} {scale_factor:.1%}"
 
     outPdfFile = os.path.splitext(pdfFile)[0] + "_print.pdf"
     with open(outPdfFile, "wb") as f:

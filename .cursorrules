@@ -1,0 +1,75 @@
+{
+    "version": 1,
+    "rules": [
+        {
+            "name": "Python Files",
+            "pattern": "**/*.py",
+            "language": "python",
+            "formatter": "black",
+            "linter": "flake8",
+            "indent_size": 4,
+            "indent_style": "space"
+        },
+        {
+            "name": "Requirements",
+            "pattern": "requirements.txt",
+            "language": "text",
+            "indent_size": 4,
+            "indent_style": "space"
+        },
+        {
+            "name": "Documentation",
+            "pattern": "**/*.md",
+            "language": "markdown",
+            "indent_size": 2,
+            "indent_style": "space"
+        },
+        {
+            "name": "Shell Scripts",
+            "pattern": "**/*.sh",
+            "language": "shell",
+            "indent_size": 4,
+            "indent_style": "space"
+        },
+        {
+            "name": "Desktop Files",
+            "pattern": "**/*.desktop",
+            "language": "ini",
+            "indent_size": 4,
+            "indent_style": "space"
+        },
+        {
+            "name": "Workflow Files",
+            "pattern": "**/*.workflow/**/*",
+            "language": "xml",
+            "indent_size": 4,
+            "indent_style": "space"
+        }
+    ],
+    "ignore": [
+        "venv/**",
+        ".git/**",
+        "**/__pycache__/**",
+        "**/*.pyc",
+        "**/*.pyo",
+        "**/*.pyd",
+        ".Python",
+        "build/**",
+        "develop-eggs/**",
+        "dist/**",
+        "downloads/**",
+        "eggs/**",
+        ".eggs/**",
+        "lib/**",
+        "lib64/**",
+        "parts/**",
+        "sdist/**",
+        "var/**",
+        "*.egg-info/**",
+        ".installed.cfg",
+        "*.egg",
+        "**/*.pdf",
+        "**/*.png",
+        "**/*.svg"
+    ]
+}
