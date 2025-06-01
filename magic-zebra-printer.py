@@ -35,13 +35,6 @@ except:
     convert = sh.Command("/opt/homebrew/bin/convert")
     identify = sh.Command("/opt/homebrew/bin/identify")
 
-try:
-    from sh import mkbitmap
-except:
-    import sh
-
-    mkbitmap = sh.Command("/opt/homebrew/bin/mkbitmap")
-
 
 def notify(msg, title="Printing"):
     notification = Notify(
@@ -72,104 +65,45 @@ def die(msg):
 
 
 def viaConvert(anyFile, printer, shouldprint=True):
-    printer_density = 208
-    # Use constants for dimensions
-    content_width_inches = CONTENT_WIDTH_CM / 2.54
-    content_width_pts = CONTENT_WIDTH_CM * 72 / 2.54
-    page_width_pts = PAPER_WIDTH_CM * 72 / 2.54
-
-    def getSize(file):
-        identify_result = identify("-format", "%w %h", file)  # returns width and height
-        width, height = identify_result.split(" ")
-        return math.ceil(float(width)), math.ceil(float(height))
-
-    width, height = getSize(anyFile)
-    convert_to_pdf_args = []
-    rotation_info = ""
-    if height < width:
-        convert_to_pdf_args += ["-rotate", "90"]
-        width, height = height, width
-        rotation_info = "↺ "
-
-    basename = os.path.basename(anyFile)
-    # For non-PDF files, include the original extension in the output name to avoid conflicts
+    """Convert non-PDF files to PDF and process via viaPYPDF."""
     base_without_ext = os.path.splitext(anyFile)[0]
-    original_ext = os.path.splitext(anyFile)[1][1:]  # Extension without dot
-    if original_ext.lower() != 'pdf':
-        outPdfFile = f"{base_without_ext}_{original_ext}_print.pdf"
-    else:
-        outPdfFile = f"{base_without_ext}_print.pdf"
-
-    convert_to_pdf_args += [
-        "-units",
-        "PixelsPerInch",
-        "-density",
-        printer_density,
-        "-resize",
-        f"{content_width_inches * printer_density:.0f}",  # Resize content based on constant
-        "-extent",
-        f"{PAPER_WIDTH_CM * printer_density / 2.54:.0f}x",  # Extend canvas based on constant
-        "-gravity",
-        "West",  # Align content to the left (west)
-        "-background",
-        "white",  # White background for the margin
-        # "-compress",
-        # "LZW",
-        "PDF:" + outPdfFile,
-    ]
-
-    if "[" in identify(anyFile):
-        # multi-image files have [x] for index, convert to PDF
-        # TODO: split into single images to optimize via mkbitmap
-        convertArgs = [anyFile, "-colorspace", "LinearGray"] + convert_to_pdf_args
-        convert(*convertArgs)
-    else:
-        # single-image files, convert to PNM and optimize with mkbitmap first
-        convertArgs = ["-"] + convert_to_pdf_args
-        # convert anyFile to PNM, pipe into mkbitmap, pipe into convert to PDF
+    
+    # Create a temporary PDF file
+    temp_pdf = f"{base_without_ext}_temp.pdf"
+    
+    # Convert to PDF using ImageMagick
+    # We don't resize here - let viaPYPDF handle all the sizing
+    try:
         convert(
-            *convertArgs,
-            _in=mkbitmap(
-                "-f",
-                2,
-                "-s",
-                2,
-                "-t",
-                0.48,
-                _in=convert(anyFile, "PNM:-", _piped=True),
-                _piped=True,
-            ),
+            anyFile,
+            "-density", "208",  # High quality conversion
+            temp_pdf
         )
-
-    print_width, print_height = getSize(outPdfFile)
-
-    if abs(print_width - page_width_pts) > 1:
-        print(
-            f"Print width error: {print_width} from output PDF file should be {page_width_pts:.0f}"
-        )
-
-    info = f"{width}×{height} {rotation_info}⇒ {print_width}x{print_height} (content: {content_width_pts:.0f}pts)"
-
-    if shouldprint:
-        lp(
-            "-d",
-            printer,
-            "-t",
-            basename,
-            f"-o PageSize=Custom.{print_width}x{print_height}",
-            outPdfFile,
-        )
-        os.remove(outPdfFile)
-        return (info, f"Printing {basename} on {printer}")
-    else:
-        return (
-            info,
-            f"Converted {basename} → {outPdfFile}",
-        )
+    except Exception as e:
+        die(f"Failed to convert {anyFile} to PDF: {e}")
+    
+    try:
+        # Process the temporary PDF through the standard PDF pipeline
+        # Pass the original filename so viaPYPDF can generate the correct output name
+        result = viaPYPDF(temp_pdf, printer, shouldprint, original_filename=anyFile)
+        return result
+    finally:
+        # Clean up temporary PDF
+        if os.path.exists(temp_pdf):
+            os.remove(temp_pdf)
 
 
-def viaPYPDF(pdfFile, printer, shouldprint=True):
-
+def viaPYPDF(pdfFile, printer, shouldprint=True, original_filename=None):
+    """
+    Process a PDF file for printing.
+    
+    Args:
+        pdfFile: The PDF file to process
+        printer: The printer to use
+        shouldprint: Whether to actually print or just convert
+        original_filename: The original filename (if different from pdfFile, e.g., when converting from image)
+    """
+    
     def getSize(page):
         # Use cropbox instead of mediabox to respect cropping
         box = page.cropbox
@@ -313,23 +247,39 @@ def viaPYPDF(pdfFile, printer, shouldprint=True):
         
         writer.add_page(final_page)
 
-        info = f"{width:.1f}×{height:.1f} {rotation}° ⇒ {page_width:.1f}x{page_height:.1f} (content: {content_width:.1f}x{content_height:.1f}) {scale_factor:.1%}"
+        info = f"{width:.1f}×{height:.1f} {rotation}° ⇒ {round(page_width)}x{round(page_height)} (content: {round(content_width)}x{round(content_height)}) {scale_factor:.1%}"
 
-    outPdfFile = os.path.splitext(pdfFile)[0] + "_print.pdf"
+    # Generate output filename based on original filename if provided
+    if original_filename:
+        # For converted files, use the original filename with its extension
+        base_without_ext = os.path.splitext(original_filename)[0]
+        original_ext = os.path.splitext(original_filename)[1][1:]  # Extension without dot
+        outPdfFile = f"{base_without_ext}_{original_ext}_print.pdf"
+        display_name = os.path.basename(original_filename)
+    else:
+        # For PDF files, use the standard naming
+        outPdfFile = os.path.splitext(pdfFile)[0] + "_print.pdf"
+        display_name = os.path.basename(pdfFile)
+    
     with open(outPdfFile, "wb") as f:
         writer.write(f)
 
     if shouldprint:
+        # Round to integers for CUPS compatibility
+        page_width_int = round(page_width)
+        page_height_int = round(page_height)
         lp(
             "-d",
             printer,
+            "-t",
+            display_name,  # Use the display name for the print job
             "-o",
-            f"PageSize=Custom.{page_width}x{page_height}",
+            f"PageSize=Custom.{page_width_int}x{page_height_int}",
             outPdfFile,
         )
         os.remove(outPdfFile)
         return (info, f"Printing on {printer}")
-    return (info, f"Converted {pdfFile} → {outPdfFile}")
+    return (info, f"Converted {display_name} → {outPdfFile}")
 
 
 if __name__ == "__main__":

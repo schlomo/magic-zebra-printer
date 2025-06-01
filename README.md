@@ -16,11 +16,11 @@ My problem is that I use it to print all sorts of shipping labels or other small
 * Should work on Mac, Linux & Windows
 * Includes PDF Service, Service and Application for MacOS. Application can be put into Dock as drag-n-drop target.
 
-The 5mm right margin is added by default to provide better handling when the label is removed from the printer, preventing content from being too close to the edge.
+The 6mm right margin is added by default to provide better handling when the label is removed from the printer, preventing content from being too close to the edge.
 
 ## Installation
 
-1. Install the prerequisites with `brew install imagemagick potrace` or (Mac) `sudo apt install imagemagick potrace` (Debian/Ubuntu)
+1. Install the prerequisites with `brew install imagemagick` (Mac) or `sudo apt install imagemagick` (Debian/Ubuntu)
 
 2. Make sure to have Python 3.6 or later installed.
 
@@ -126,7 +126,7 @@ The visual report includes:
 ### Test Validation
 
 The test suite validates:
-- ✓ Output paper width is exactly 10.5cm (297.6 points) including 5mm right margin
+- ✓ Output paper width is exactly 10.6cm (300.5 points) including 6mm right margin
 - ✓ Content is scaled to 10cm width (283.5 points)
 - ✓ Aspect ratio is maintained for the content
 - ✓ Orientation is portrait (rotates landscape PDFs)

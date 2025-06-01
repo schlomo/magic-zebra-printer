@@ -483,37 +483,65 @@ def generate_html_report(report_data, report_path):
             margin: 5px 0;
             border-radius: 4px;
             font-family: monospace;
+            font-size: 12px;
         }}
-        .page-group {{
+        .page-section {{
             border: 1px solid #e0e0e0;
-            margin: 10px 0;
-            padding: 10px;
-            border-radius: 4px;
-            background: #fafafa;
+            margin: 15px 0;
+            padding: 15px;
+            border-radius: 8px;
+            background: white;
         }}
-        .page-group.failed {{
+        .page-section.failed {{
             background: #ffebee;
-            border-color: #f44336;
+            border-color: #ffcdd2;
         }}
-        .page-thumbnails {{
+        .page-header {{
+            font-size: 18px;
+            font-weight: bold;
+            margin-bottom: 10px;
+            color: #333;
+        }}
+        .page-content {{
             display: flex;
-            gap: 10px;
-            flex-wrap: wrap;
-            margin-top: 10px;
+            gap: 20px;
+            align-items: flex-start;
         }}
-        .page-thumb {{
+        .page-tests {{
+            flex: 1;
+            min-width: 300px;
+        }}
+        .page-images {{
+            flex: 2;
+            display: flex;
+            gap: 15px;
+        }}
+        .page-image-container {{
+            flex: 1;
             text-align: center;
-            flex: 0 0 150px;
+            border: 1px solid #ddd;
+            padding: 10px;
+            background: white;
+            border-radius: 4px;
         }}
-        .page-thumb img {{
+        .page-image-container img {{
             max-width: 100%;
+            height: auto;
             border: 1px solid #ddd;
             border-radius: 4px;
+            margin-bottom: 5px;
         }}
-        .page-label {{
-            font-size: 12px;
-            color: #666;
-            margin-top: 5px;
+        .page-image-container h4 {{
+            margin: 0 0 10px 0;
+            color: #555;
+        }}
+        @media (max-width: 1200px) {{
+            .page-content {{
+                flex-direction: column;
+            }}
+            .page-images {{
+                margin-top: 15px;
+            }}
         }}
     </style>
 </head>
@@ -531,8 +559,6 @@ def generate_html_report(report_data, report_path):
         html += f"""
     <div class="test-case {status_class}">
         <h2>{os.path.basename(test['input'])} - {status_text}</h2>
-        
-        <div class="test-results">
 """
         
         # Group tests by page
@@ -556,142 +582,167 @@ def generate_html_report(report_data, report_path):
                     page_tests["single"] = []
                 page_tests["single"].append((test_name, test_passed, message))
         
-        # Display tests grouped by page
+        # Display tests and images by page
         if "single" in page_tests:
-            # Single page PDF
+            # Single page PDF - show tests and images together
+            html += '        <div class="page-section">\n'
+            html += '            <div class="page-tests">\n'
             for test_name, test_passed, message in page_tests["single"]:
                 result = '<span class="pass">✓</span>' if test_passed else '<span class="fail">✗</span>'
-                html += f"            <div>{result} {test_name}: {message}</div>\n"
+                html += f"                <div>{result} {test_name}: {message}</div>\n"
+            html += '            </div>\n'
+            
+            # Show images for single page
+            html += '            <div class="images" style="margin-top: 20px;">\n'
+            html += '                <div class="image-container">\n'
+            html += '                    <h3>Input</h3>\n'
+            
+            # Input thumbnail
+            if 'input_thumbs' in test and len(test['input_thumbs']) > 0 and os.path.exists(test['input_thumbs'][0]):
+                thumb_filename = os.path.basename(test['input_thumbs'][0])
+                html += f'                    <img src="{thumb_filename}" alt="Input">\n'
+            else:
+                html += '                    <p>Thumbnail not available</p>\n'
+            
+            # Input dimension info
+            input_info = get_file_info(test['input'], page_num=0)
+            if input_info:
+                if input_info.get('is_image'):
+                    html += f"""                    <div class="dimension-info">
+                        Dimensions: {input_info['width_px']} × {input_info['height_px']} px<br>
+                        Aspect ratio: {input_info['aspect_ratio']:.3f}
+                    </div>
+"""
+                elif input_info.get('is_cropped'):
+                    html += f"""                    <div class="dimension-info">
+                        Crop: {input_info['width']:.1f}×{input_info['height']:.1f} pts<br>
+                        ({input_info['width']/72*2.54:.1f}×{input_info['height']/72*2.54:.1f} cm)<br>
+                        Rotation: {input_info['rotation']}°
+                    </div>
+"""
+                else:
+                    html += f"""                    <div class="dimension-info">
+                        {input_info['width']:.1f}×{input_info['height']:.1f} pts<br>
+                        ({input_info['width']/72*2.54:.1f}×{input_info['height']/72*2.54:.1f} cm)<br>
+                        Rotation: {input_info['rotation']}°
+                    </div>
+"""
+            
+            html += '                </div>\n'
+            html += '                <div class="image-container">\n'
+            html += '                    <h3>Output</h3>\n'
+            
+            # Output thumbnail
+            if 'output_thumbs' in test and len(test['output_thumbs']) > 0 and os.path.exists(test['output_thumbs'][0]):
+                thumb_filename = os.path.basename(test['output_thumbs'][0])
+                html += f'                    <img src="{thumb_filename}" alt="Output">\n'
+            else:
+                html += '                    <p>Thumbnail not available</p>\n'
+            
+            # Output dimension info
+            output_info = get_file_info(test['output'], page_num=0)
+            if output_info:
+                html += f"""                    <div class="dimension-info">
+                        {output_info['width']:.1f}×{output_info['height']:.1f} pts<br>
+                        ({output_info['width']/72*2.54:.1f}×{output_info['height']/72*2.54:.1f} cm)<br>
+                        Rotation: {output_info['rotation']}°
+                    </div>
+"""
+            
+            html += '                </div>\n'
+            html += '            </div>\n'
+            html += '        </div>\n'
         else:
-            # Multi-page PDF - show by page
+            # Multi-page PDF - show each page separately
             for page_num in sorted(page_tests.keys()):
+                page_idx = page_num - 1  # Convert to 0-based index for arrays
                 page_all_passed = all(test[1] for test in page_tests[page_num])
                 page_class = "" if page_all_passed else "failed"
-                html += f'        <div class="page-group {page_class}">\n'
-                html += f'            <strong>Page {page_num}</strong>\n'
+                
+                html += f'        <div class="page-section {page_class}">\n'
+                html += f'            <div class="page-header">Page {page_num}</div>\n'
+                html += '            <div class="page-content">\n'
+                
+                # Tests for this page
+                html += '                <div class="page-tests">\n'
                 for test_name, test_passed, message in page_tests[page_num]:
                     result = '<span class="pass">✓</span>' if test_passed else '<span class="fail">✗</span>'
                     # Remove page prefix for cleaner display
                     clean_name = test_name.split(": ", 1)[1] if ": " in test_name else test_name
-                    html += f"            <div>{result} {clean_name}: {message}</div>\n"
+                    html += f"                    <div>{result} {clean_name}: {message}</div>\n"
+                html += '                </div>\n'
+                
+                # Images for this page
+                html += '                <div class="page-images">\n'
+                
+                # Input image
+                html += '                    <div class="page-image-container">\n'
+                html += '                        <h4>Input</h4>\n'
+                if 'input_thumbs' in test and page_idx < len(test['input_thumbs']) and os.path.exists(test['input_thumbs'][page_idx]):
+                    thumb_filename = os.path.basename(test['input_thumbs'][page_idx])
+                    html += f'                        <img src="{thumb_filename}" alt="Input Page {page_num}">\n'
+                else:
+                    html += '                        <p>Thumbnail not available</p>\n'
+                
+                # Get page-specific info
+                input_info = get_file_info(test['input'], page_num=page_idx)
+                if isinstance(input_info, list) and page_idx < len(input_info):
+                    page_info = input_info[page_idx]
+                elif isinstance(input_info, dict):
+                    page_info = input_info
+                else:
+                    page_info = None
+                    
+                if page_info:
+                    if page_info.get('is_cropped'):
+                        html += f"""                        <div class="dimension-info">
+                            Crop: {page_info['width']:.1f}×{page_info['height']:.1f} pts<br>
+                            ({page_info['width']/72*2.54:.1f}×{page_info['height']/72*2.54:.1f} cm)<br>
+                            Rotation: {page_info['rotation']}°
+                        </div>
+"""
+                    else:
+                        html += f"""                        <div class="dimension-info">
+                            {page_info['width']:.1f}×{page_info['height']:.1f} pts<br>
+                            ({page_info['width']/72*2.54:.1f}×{page_info['height']/72*2.54:.1f} cm)<br>
+                            Rotation: {page_info['rotation']}°
+                        </div>
+"""
+                
+                html += '                    </div>\n'
+                
+                # Output image
+                html += '                    <div class="page-image-container">\n'
+                html += '                        <h4>Output</h4>\n'
+                if 'output_thumbs' in test and page_idx < len(test['output_thumbs']) and os.path.exists(test['output_thumbs'][page_idx]):
+                    thumb_filename = os.path.basename(test['output_thumbs'][page_idx])
+                    html += f'                        <img src="{thumb_filename}" alt="Output Page {page_num}">\n'
+                else:
+                    html += '                        <p>Thumbnail not available</p>\n'
+                
+                # Get output page-specific info
+                output_info = get_file_info(test['output'], page_num=page_idx)
+                if isinstance(output_info, list) and page_idx < len(output_info):
+                    page_info = output_info[page_idx]
+                elif isinstance(output_info, dict):
+                    page_info = output_info
+                else:
+                    page_info = None
+                    
+                if page_info:
+                    html += f"""                        <div class="dimension-info">
+                            {page_info['width']:.1f}×{page_info['height']:.1f} pts<br>
+                            ({page_info['width']/72*2.54:.1f}×{page_info['height']/72*2.54:.1f} cm)<br>
+                            Rotation: {page_info['rotation']}°
+                        </div>
+"""
+                
+                html += '                    </div>\n'
+                html += '                </div>\n'
+                html += '            </div>\n'
                 html += '        </div>\n'
         
-        html += """        </div>
-        
-        <div class="images">
-            <div class="image-container">
-                <h3>Input</h3>
-"""
-        
-        # Use pre-generated thumbnails
-        if 'input_thumbs' in test and len(test['input_thumbs']) > 0:
-            if test.get('is_multipage', False):
-                # Multi-page - show thumbnails in a grid
-                html += '                <div class="page-thumbnails">\n'
-                for idx, thumb_path in enumerate(test['input_thumbs']):
-                    if os.path.exists(thumb_path):
-                        thumb_filename = os.path.basename(thumb_path)
-                        html += f'''                    <div class="page-thumb">
-                        <img src="{thumb_filename}" alt="Page {idx + 1}">
-                        <div class="page-label">Page {idx + 1}</div>
-                    </div>
-'''
-                html += '                </div>\n'
-            else:
-                # Single page - show single thumbnail
-                if os.path.exists(test['input_thumbs'][0]):
-                    thumb_filename = os.path.basename(test['input_thumbs'][0])
-                    html += f'                <img src="{thumb_filename}" alt="Input">\n'
-                else:
-                    html += '                <p>Thumbnail not available</p>\n'
-        else:
-            html += '                <p>Thumbnail not available</p>\n'
-            
-        # Show dimension info for first page
-        input_info = get_file_info(test['input'], page_num=0)
-        if input_info:
-            if input_info.get('is_image'):
-                html += f"""                <div class="dimension-info">
-                    <strong>Image file</strong><br>
-                    Dimensions: {input_info['width_px']} × {input_info['height_px']} pixels<br>
-                    Aspect ratio: {input_info['aspect_ratio']:.3f}
-                </div>
-"""
-            elif input_info['is_cropped']:
-                html += f"""                <div class="dimension-info">
-                    <strong>Crop Box:</strong> {input_info['width']:.1f} × {input_info['height']:.1f} pts<br>
-                    ({input_info['width']/72*2.54:.1f} × {input_info['height']/72*2.54:.1f} cm)<br>
-                    <strong>Media Box:</strong> {input_info['mediabox_width']:.1f} × {input_info['mediabox_height']:.1f} pts<br>
-                    Rotation: {input_info['rotation']}°
-                </div>
-"""
-            else:
-                html += f"""                <div class="dimension-info">
-                    {input_info['width']:.1f} × {input_info['height']:.1f} pts<br>
-                    ({input_info['width']/72*2.54:.1f} × {input_info['height']/72*2.54:.1f} cm)<br>
-                    Rotation: {input_info['rotation']}°
-                </div>
-"""
-            
-            # Show page count if multi-page
-            if test.get('is_multipage', False):
-                num_pages = len(test['input_thumbs'])
-                html += f"""                <div class="dimension-info" style="margin-top: 5px;">
-                    <strong>Multi-page PDF:</strong> {num_pages} pages
-                </div>
-"""
-        
-        html += """            </div>
-            <div class="image-container">
-                <h3>Output</h3>
-"""
-        
-        # Use pre-generated thumbnails
-        if 'output_thumbs' in test and len(test['output_thumbs']) > 0:
-            if test.get('is_multipage', False):
-                # Multi-page - show thumbnails in a grid
-                html += '                <div class="page-thumbnails">\n'
-                for idx, thumb_path in enumerate(test['output_thumbs']):
-                    if os.path.exists(thumb_path):
-                        thumb_filename = os.path.basename(thumb_path)
-                        html += f'''                    <div class="page-thumb">
-                        <img src="{thumb_filename}" alt="Page {idx + 1}">
-                        <div class="page-label">Page {idx + 1}</div>
-                    </div>
-'''
-                html += '                </div>\n'
-            else:
-                # Single page - show single thumbnail
-                if os.path.exists(test['output_thumbs'][0]):
-                    thumb_filename = os.path.basename(test['output_thumbs'][0])
-                    html += f'                <img src="{thumb_filename}" alt="Output">\n'
-                else:
-                    html += '                <p>Thumbnail not available</p>\n'
-        else:
-            html += '                <p>Thumbnail not available</p>\n'
-            
-        # Show dimension info for first page
-        output_info = get_file_info(test['output'], page_num=0)
-        if output_info:
-            html += f"""                <div class="dimension-info">
-                    {output_info['width']:.1f} × {output_info['height']:.1f} pts<br>
-                    ({output_info['width']/72*2.54:.1f} × {output_info['height']/72*2.54:.1f} cm)<br>
-                    Rotation: {output_info['rotation']}°
-                </div>
-"""
-            
-            # Show page count if multi-page
-            if test.get('is_multipage', False):
-                num_pages = len(test['output_thumbs'])
-                html += f"""                <div class="dimension-info" style="margin-top: 5px;">
-                    <strong>Multi-page PDF:</strong> {num_pages} pages
-                </div>
-"""
-        
-        html += """            </div>
-        </div>
-    </div>
-"""
+        html += '    </div>\n'
     
     html += """
 </body>
