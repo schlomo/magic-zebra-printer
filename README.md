@@ -9,11 +9,14 @@ My Zebra label printer has a roll of continuous paper 10 cm wide and a cutter so
 
 My problem is that I use it to print all sorts of shipping labels or other small info pages that have different page sizes. Previously I used to create many different custom page sizes to accomodate different print jobs. With this script everything happens automatically:
 
-* Scale down the page to 10 cm width and rotate landscape to portrait to maximize print size
+* Scale down the content to 10 cm width with a 6 mm right margin (total paper width: 10.6 cm)
+* Rotate landscape to portrait to maximize print size
 * Determine the page length required for the print job
 * Determine the printer (looking for `*zebra*`) to use
 * Should work on Mac, Linux & Windows
 * Includes PDF Service, Service and Application for MacOS. Application can be put into Dock as drag-n-drop target.
+
+The 5mm right margin is added by default to provide better handling when the label is removed from the printer, preventing content from being too close to the edge.
 
 ## Installation
 
@@ -123,8 +126,9 @@ The visual report includes:
 ### Test Validation
 
 The test suite validates:
-- ✓ Output width is exactly 10cm (283.5 points)
-- ✓ Aspect ratio is maintained
+- ✓ Output paper width is exactly 10.5cm (297.6 points) including 5mm right margin
+- ✓ Content is scaled to 10cm width (283.5 points)
+- ✓ Aspect ratio is maintained for the content
 - ✓ Orientation is portrait (rotates landscape PDFs)
 - ✓ Cropping is respected
 - ✓ Various rotation angles (90°, 180°, 270°) are handled correctly

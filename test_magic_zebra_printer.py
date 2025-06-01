@@ -1,5 +1,30 @@
 #!/usr/bin/env python3
 
+# Constants
+CONTENT_WIDTH_CM = 10.0  # Content width (without margin)
+RIGHT_MARGIN_CM = 0.6    # Right margin
+TARGET_PAGE_WIDTH_CM = CONTENT_WIDTH_CM + RIGHT_MARGIN_CM  # Page width including margin
+TARGET_CONTENT_WIDTH_PTS = CONTENT_WIDTH_CM * 72 / 2.54  # Convert cm to points
+TARGET_PAGE_WIDTH_PTS = TARGET_PAGE_WIDTH_CM * 72 / 2.54  # Convert cm to points
+TOLERANCE = 0.5  # Allow 0.5 point tolerance for floating point comparisons
+
+"""
+   Copyright 2021-2025 Schlomo Schapiro
+
+   Licensed under the Apache License, Version 2.0 (the "License");
+   you may not use this file except in compliance with the License.
+   You may obtain a copy of the License at
+
+       http://www.apache.org/licenses/LICENSE-2.0
+
+   Unless required by applicable law or agreed to in writing, software
+   distributed under the License is distributed on an "AS IS" BASIS,
+   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+
+   See the License for the specific language governing permissions and
+   limitations under the License.
+"""
+
 import os
 import sys
 import subprocess
@@ -11,11 +36,6 @@ import tempfile
 import webbrowser
 from datetime import datetime
 import hashlib
-
-# Constants
-TARGET_WIDTH_CM = 10.0
-TARGET_WIDTH_PTS = TARGET_WIDTH_CM * 72 / 2.54  # Convert cm to points (283.5)
-TOLERANCE = 0.5  # Allow 0.5 point tolerance for floating point comparisons
 
 class Colors:
     GREEN = '\033[92m'
@@ -269,15 +289,16 @@ def validate_output(input_file, output_file):
         page_tests = []
         
         # Test 1: Check width is correct (10cm for both PDFs and images)
-        width_diff = abs(output_page['width'] - TARGET_WIDTH_PTS)
+        width_diff = abs(output_page['width'] - TARGET_PAGE_WIDTH_PTS)
         width_test = width_diff <= TOLERANCE
         page_tests.append((
-            f"Page {page_idx + 1}: Width is 10cm",
+            f"Page {page_idx + 1}: Width is {TARGET_PAGE_WIDTH_CM}cm",
             width_test,
             f"Width: {output_page['width']:.1f}pts ({output_page['width']/72*2.54:.2f}cm)"
         ))
         
         # Test 2: Check aspect ratio is maintained
+        # The content maintains aspect ratio, but page is wider due to margin
         input_aspect = input_page['aspect_ratio']
         output_aspect = output_page['aspect_ratio']
         
@@ -285,11 +306,17 @@ def validate_output(input_file, output_file):
         if input_page['width'] > input_page['height'] and output_page['height'] > output_page['width']:
             input_aspect = 1 / input_aspect
         
-        aspect_ratio_diff = abs(input_aspect - output_aspect)
+        # Calculate expected page aspect ratio considering the margin
+        # Content maintains original aspect ratio at 283.5pts width
+        # Page is 297.6pts wide with same height as content
+        # So page aspect ratio = input aspect ratio * (page width / content width)
+        expected_page_aspect = input_aspect * (TARGET_PAGE_WIDTH_PTS / TARGET_CONTENT_WIDTH_PTS)
+        
+        aspect_ratio_diff = abs(expected_page_aspect - output_aspect)
         aspect_test = aspect_ratio_diff < 0.01  # Allow 1% difference
         
         # Add more context for cropped PDFs or images
-        aspect_message = f"Input: {input_aspect:.3f}, Output: {output_aspect:.3f}"
+        aspect_message = f"Input: {input_aspect:.3f}, Output page: {output_aspect:.3f} (expected: {expected_page_aspect:.3f})"
         if input_page.get('is_cropped'):
             aspect_message += " (input is cropped)"
         elif input_page.get('is_image'):
@@ -301,12 +328,17 @@ def validate_output(input_file, output_file):
             aspect_message
         ))
         
-        # Test 3: Check orientation is portrait (height > width)
-        orientation_test = output_page['height'] >= output_page['width']
+        # Test 3: Check orientation is portrait (height > width) or square
+        # For square inputs, the page width/height ratio will be exactly the page/content width ratio
+        # due to the right margin. Calculate the maximum allowed ratio dynamically.
+        max_ratio = TARGET_PAGE_WIDTH_PTS / TARGET_CONTENT_WIDTH_PTS  # This accounts for margin
+        width_height_ratio = output_page['width'] / output_page['height']
+        orientation_test = width_height_ratio <= max_ratio * 1.001  # Add tiny tolerance for rounding
+        orientation_desc = "portrait" if output_page['height'] > output_page['width'] else "square/landscape"
         page_tests.append((
-            f"Page {page_idx + 1}: Orientation is portrait",
+            f"Page {page_idx + 1}: Orientation is portrait or square",
             orientation_test,
-            f"Dimensions: {output_page['width']:.1f}×{output_page['height']:.1f}"
+            f"Dimensions: {output_page['width']:.1f}×{output_page['height']:.1f} ({orientation_desc})"
         ))
         
         # Test 4: Check rotation is removed (should be 0)
@@ -488,7 +520,8 @@ def generate_html_report(report_data, report_path):
 <body>
     <h1>Magic Zebra Printer Test Report</h1>
     <p>Generated: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}</p>
-    <p>Target width: {TARGET_WIDTH_CM}cm ({TARGET_WIDTH_PTS:.1f} points)</p>
+    <p>Target page width: {TARGET_PAGE_WIDTH_CM}cm ({TARGET_PAGE_WIDTH_PTS:.1f} points) - includes {RIGHT_MARGIN_CM}cm right margin</p>
+    <p>Target content width: {CONTENT_WIDTH_CM}cm ({TARGET_CONTENT_WIDTH_PTS:.1f} points)</p>
 """
     
     for i, test in enumerate(report_data):

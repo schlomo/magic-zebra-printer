@@ -1,7 +1,12 @@
 #!/usr/bin/env python3
 
+# Configuration constants
+CONTENT_WIDTH_CM = 10.0  # Content width in cm
+RIGHT_MARGIN_CM = 0.6    # Right margin in cm
+PAPER_WIDTH_CM = CONTENT_WIDTH_CM + RIGHT_MARGIN_CM  # Total paper width
+
 """
-   Copyright 2021 Schlomo Schapiro
+   Copyright 2021-2025 Schlomo Schapiro
 
    Licensed under the Apache License, Version 2.0 (the "License");
    you may not use this file except in compliance with the License.
@@ -68,10 +73,10 @@ def die(msg):
 
 def viaConvert(anyFile, printer, shouldprint=True):
     printer_density = 208
-    # Use 10cm width like PDFs instead of 4 inches
-    printer_width_cm = 10.0
-    printer_width_inches = printer_width_cm / 2.54
-    print_width_pts = printer_width_cm * 72 / 2.54
+    # Use constants for dimensions
+    content_width_inches = CONTENT_WIDTH_CM / 2.54
+    content_width_pts = CONTENT_WIDTH_CM * 72 / 2.54
+    page_width_pts = PAPER_WIDTH_CM * 72 / 2.54
 
     def getSize(file):
         identify_result = identify("-format", "%w %h", file)  # returns width and height
@@ -101,7 +106,13 @@ def viaConvert(anyFile, printer, shouldprint=True):
         "-density",
         printer_density,
         "-resize",
-        f"{printer_width_inches * printer_density:.0f}",
+        f"{content_width_inches * printer_density:.0f}",  # Resize content based on constant
+        "-extent",
+        f"{PAPER_WIDTH_CM * printer_density / 2.54:.0f}x",  # Extend canvas based on constant
+        "-gravity",
+        "West",  # Align content to the left (west)
+        "-background",
+        "white",  # White background for the margin
         # "-compress",
         # "LZW",
         "PDF:" + outPdfFile,
@@ -132,12 +143,12 @@ def viaConvert(anyFile, printer, shouldprint=True):
 
     print_width, print_height = getSize(outPdfFile)
 
-    if abs(print_width - print_width_pts) > 1:
+    if abs(print_width - page_width_pts) > 1:
         print(
-            f"Print width error: {print_width} from output PDF file should be {print_width_pts:.0f}"
+            f"Print width error: {print_width} from output PDF file should be {page_width_pts:.0f}"
         )
 
-    info = f"{width}×{height} {rotation_info}⇒ {print_width}x{print_height}"
+    info = f"{width}×{height} {rotation_info}⇒ {print_width}x{print_height} (content: {content_width_pts:.0f}pts)"
 
     if shouldprint:
         lp(
@@ -174,8 +185,12 @@ def viaPYPDF(pdfFile, printer, shouldprint=True):
     reader = pypdf.PdfReader(pdfFile)
     writer = pypdf.PdfWriter()
 
-    print_width = 10 * 72 / 2.54  # 10 cm * (72 points/inch) / (2.54 cm/inch)
-    print(f"\nTarget print width: {print_width:.1f} points ({print_width/72:.1f} inches)")
+    content_width = CONTENT_WIDTH_CM * 72 / 2.54  # Use constant
+    margin_right = RIGHT_MARGIN_CM * 72 / 2.54  # Use constant
+    page_width = content_width + margin_right  # Total page width
+    print(f"\nTarget content width: {content_width:.1f} points ({content_width/72:.1f} inches)")
+    print(f"Right margin: {margin_right:.1f} points ({RIGHT_MARGIN_CM*10:.1f}mm)")
+    print(f"Total page width: {page_width:.1f} points ({PAPER_WIDTH_CM*10:.1f}mm)")
 
     for page_num, page in enumerate(reader.pages):
         print(f"\nProcessing page {page_num + 1}:")
@@ -271,20 +286,34 @@ def viaPYPDF(pdfFile, printer, shouldprint=True):
             new_page = rotated_page
             printDebugInfo(new_page, "After landscape rotation", width, height, 0)
 
-        # Calculate scaling to fit the target width while maintaining aspect ratio
-        scale_factor = print_width / width
-        print_height = math.ceil(height * scale_factor)
+        # Calculate scaling to fit the content to 100mm width while maintaining aspect ratio
+        scale_factor = content_width / width
+        content_height = math.ceil(height * scale_factor)
+        
+        # Page height is same as content height (no top/bottom margins)
+        page_height = content_height
 
         print(f"\nScaling:")
         print(f"  Original: {width:.1f}×{height:.1f}")
-        print(f"  Target: {print_width:.1f}×{print_height:.1f}")
+        print(f"  Content: {content_width:.1f}×{content_height:.1f}")
+        print(f"  Page size: {page_width:.1f}×{page_height:.1f}")
         print(f"  Scale factor: {scale_factor:.1%}")
 
-        # Apply scaling
-        new_page.scale_to(print_width, print_height)
-        writer.add_page(new_page)
+        # First scale the content to the target size
+        new_page.scale_to(content_width, content_height)
+        
+        # Create a larger page with the right margin
+        final_page = pypdf.PageObject.create_blank_page(
+            width=page_width,
+            height=page_height
+        )
+        
+        # Merge the scaled content onto the larger page (positioned at left edge)
+        final_page.merge_page(new_page)
+        
+        writer.add_page(final_page)
 
-        info = f"{width:.1f}×{height:.1f} {rotation}° ⇒ {print_width:.1f}x{print_height:.1f} {scale_factor:.1%}"
+        info = f"{width:.1f}×{height:.1f} {rotation}° ⇒ {page_width:.1f}x{page_height:.1f} (content: {content_width:.1f}x{content_height:.1f}) {scale_factor:.1%}"
 
     outPdfFile = os.path.splitext(pdfFile)[0] + "_print.pdf"
     with open(outPdfFile, "wb") as f:
@@ -295,7 +324,7 @@ def viaPYPDF(pdfFile, printer, shouldprint=True):
             "-d",
             printer,
             "-o",
-            f"PageSize=Custom.{print_width}x{print_height}",
+            f"PageSize=Custom.{page_width}x{page_height}",
             outPdfFile,
         )
         os.remove(outPdfFile)
