@@ -59,8 +59,11 @@ def getPrinter():
     if "MAGIC_ZEBRA_PRINTER" in os.environ:
         return os.environ.get("MAGIC_ZEBRA_PRINTER")
     # Force the C locale: `lpstat -p` output is otherwise localized and the
-    # "idle" match below finds nothing in non-English locales.
-    lines = lpstat("-p", _env={**os.environ, "LANG": "C", "LC_ALL": "C"}).split("\n")
+    # "idle" match below finds nothing in non-English locales. LANGUAGE takes
+    # precedence over LC_ALL/LANG for CUPS, so it must be forced too.
+    lines = lpstat(
+        "-p", _env={**os.environ, "LANG": "C", "LC_ALL": "C", "LANGUAGE": "C"}
+    ).split("\n")
     for line in lines:
         if not "idle" in line:
             continue
