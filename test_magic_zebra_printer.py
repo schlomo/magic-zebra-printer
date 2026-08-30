@@ -808,18 +808,39 @@ def load_mzp_module():
     return module
 
 def check_address_label_pipeline(mzp, rendered_pdf):
-    """Feed a rendered address label through viaPYPDF and check the final
-    page width matches the standard 10.6cm paper width, with scale factor 1.0
-    (i.e. the fixed font sizes were not stretched by an unwanted rotation)."""
+    """Feed a rendered address label through viaPYPDF (as address_label_flow
+    does, with auto_rotate=False) and check the final page width matches the
+    standard 10.6cm paper width, with scale factor 1.0 (i.e. the fixed font
+    sizes were not stretched by the pipeline's landscape auto-rotate)."""
     output_pdf = os.path.splitext(rendered_pdf)[0] + "_print.pdf"
     try:
-        info, _title = mzp.viaPYPDF(rendered_pdf, "NONE", False)
+        info, _title = mzp.viaPYPDF(rendered_pdf, "NONE", False, auto_rotate=False)
         reader = pypdf.PdfReader(output_pdf)
         width = float(reader.pages[0].mediabox.width)
         width_ok = abs(width - TARGET_PAGE_WIDTH_PTS) <= TOLERANCE
         scale_ok = "100.0%" in info
         message = f"Output width: {width:.1f}pts (expected {TARGET_PAGE_WIDTH_PTS:.1f}pts); {info}"
         return width_ok and scale_ok, message
+    finally:
+        if os.path.exists(output_pdf):
+            os.remove(output_pdf)
+
+def check_short_address_height(mzp, rendered_pdf):
+    """A short 2-line address must print at well under 10cm of paper (no
+    padding to a square label), with scale factor 1.0 (fixed fonts intact)."""
+    output_pdf = os.path.splitext(rendered_pdf)[0] + "_print.pdf"
+    max_height_pts = 5.0 * 72 / 2.54  # 5cm ceiling for a 2-line address
+    try:
+        info, _title = mzp.viaPYPDF(rendered_pdf, "NONE", False, auto_rotate=False)
+        reader = pypdf.PdfReader(output_pdf)
+        height = float(reader.pages[0].mediabox.height)
+        height_ok = height <= max_height_pts
+        scale_ok = "100.0%" in info
+        message = (
+            f"Output height: {height:.1f}pts ({height/72*2.54:.2f}cm, "
+            f"limit {max_height_pts/72*2.54:.1f}cm); {info}"
+        )
+        return height_ok and scale_ok, message
     finally:
         if os.path.exists(output_pdf):
             os.remove(output_pdf)
@@ -866,6 +887,9 @@ def run_address_label_tests():
         ("output width through pipeline", "Sender GmbH",
          "Max Mustermann\nMusterweg 2\n54321 Musterstadt", True,
          lambda path: check_address_label_pipeline(mzp, path)),
+        ("short address stays short (no forced square)", "Sender GmbH",
+         "Max Mustermann\n12345 City", True,
+         lambda path: check_short_address_height(mzp, path)),
     ]
 
     passed_count = 0
