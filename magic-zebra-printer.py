@@ -374,6 +374,14 @@ def render_address_pdf(sender, recipient, out_path):
     if not any(line.strip() for line in recipient_lines):
         raise ValueError("Recipient must not be empty")
 
+    # Drop leading/trailing blank lines - e.g. the macOS dialog pre-fills
+    # "\n\n\n\n" to make the field multiline, and unused lines survive
+    # untouched if the user types fewer. Interior blank lines are kept,
+    # since they're deliberate spacing.
+    first = next(i for i, line in enumerate(recipient_lines) if line.strip())
+    last = next(i for i, line in enumerate(reversed(recipient_lines)) if line.strip())
+    recipient_lines = recipient_lines[first : len(recipient_lines) - last]
+
     for line in ([sender] if sender else []) + recipient_lines:
         _check_latin1(line)
 

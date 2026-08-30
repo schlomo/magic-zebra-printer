@@ -845,6 +845,41 @@ def check_short_address_height(mzp, rendered_pdf):
         if os.path.exists(output_pdf):
             os.remove(output_pdf)
 
+def check_trailing_blank_lines_stripped(mzp, rendered_pdf):
+    """Trailing blank lines (e.g. the macOS dialog's unused pre-filled
+    newlines) must not add height - compare against the same address with
+    no trailing blank lines at all."""
+    height_with_blanks = float(pypdf.PdfReader(rendered_pdf).pages[0].mediabox.height)
+
+    with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as f:
+        baseline_path = f.name
+    try:
+        mzp.render_address_pdf("Sender GmbH", "Line1\nLine2", baseline_path)
+        baseline_height = float(pypdf.PdfReader(baseline_path).pages[0].mediabox.height)
+    finally:
+        os.remove(baseline_path)
+
+    ok = abs(height_with_blanks - baseline_height) < 0.01
+    message = f"With trailing blanks: {height_with_blanks:.2f}pts, baseline (no blanks): {baseline_height:.2f}pts"
+    return ok, message
+
+def check_interior_blank_line_preserved(mzp, rendered_pdf):
+    """An interior blank line is deliberate spacing and must add height,
+    unlike leading/trailing blank lines."""
+    height_with_blank = float(pypdf.PdfReader(rendered_pdf).pages[0].mediabox.height)
+
+    with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as f:
+        baseline_path = f.name
+    try:
+        mzp.render_address_pdf("Sender GmbH", "Line1\nLine2", baseline_path)
+        baseline_height = float(pypdf.PdfReader(baseline_path).pages[0].mediabox.height)
+    finally:
+        os.remove(baseline_path)
+
+    ok = height_with_blank > baseline_height
+    message = f"With interior blank: {height_with_blank:.2f}pts, 2-line baseline: {baseline_height:.2f}pts"
+    return ok, message
+
 def test_render_address_pdf_case(mzp, name, sender, recipient, should_succeed, extra_check=None):
     """Run one render_address_pdf case, following the test_file() pass/fail pattern."""
     with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as f:
@@ -890,6 +925,12 @@ def run_address_label_tests():
         ("short address stays short (no forced square)", "Sender GmbH",
          "Max Mustermann\n12345 City", True,
          lambda path: check_short_address_height(mzp, path)),
+        ("trailing blank lines stripped (dialog padding)", "Sender GmbH",
+         "Line1\nLine2\n\n\n\n", True,
+         lambda path: check_trailing_blank_lines_stripped(mzp, path)),
+        ("interior blank line preserved", "Sender GmbH",
+         "Line1\n\nLine2", True,
+         lambda path: check_interior_blank_line_preserved(mzp, path)),
     ]
 
     passed_count = 0
