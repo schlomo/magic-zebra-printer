@@ -799,6 +799,84 @@ def get_file_info(file_path, page_num=None):
         # For images, ignore page_num as they're single page
         return get_image_info(file_path)
 
+def load_mzp_module():
+    """Import magic-zebra-printer.py (hyphenated filename, not import-able directly)."""
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("magic_zebra_printer", "magic-zebra-printer.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+def check_address_label_pipeline(mzp, rendered_pdf):
+    """Feed a rendered address label through viaPYPDF and check the final
+    page width matches the standard 10.6cm paper width, with scale factor 1.0
+    (i.e. the fixed font sizes were not stretched by an unwanted rotation)."""
+    output_pdf = os.path.splitext(rendered_pdf)[0] + "_print.pdf"
+    try:
+        info, _title = mzp.viaPYPDF(rendered_pdf, "NONE", False)
+        reader = pypdf.PdfReader(output_pdf)
+        width = float(reader.pages[0].mediabox.width)
+        width_ok = abs(width - TARGET_PAGE_WIDTH_PTS) <= TOLERANCE
+        scale_ok = "100.0%" in info
+        message = f"Output width: {width:.1f}pts (expected {TARGET_PAGE_WIDTH_PTS:.1f}pts); {info}"
+        return width_ok and scale_ok, message
+    finally:
+        if os.path.exists(output_pdf):
+            os.remove(output_pdf)
+
+def test_render_address_pdf_case(mzp, name, sender, recipient, should_succeed, extra_check=None):
+    """Run one render_address_pdf case, following the test_file() pass/fail pattern."""
+    with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as f:
+        out_path = f.name
+    try:
+        error = None
+        try:
+            mzp.render_address_pdf(sender, recipient, out_path)
+        except ValueError as e:
+            error = e
+
+        if should_succeed:
+            passed = error is None
+            message = str(error) if error else ""
+            if passed and extra_check:
+                passed, message = extra_check(out_path)
+        else:
+            passed = error is not None
+            message = f"Correctly rejected: {error}" if error else "Should have raised ValueError but didn't"
+
+        print_test_result(f"Address label: {name}", passed, message)
+        return passed
+    finally:
+        if os.path.exists(out_path):
+            os.remove(out_path)
+
+def run_address_label_tests():
+    """Test cases for render_address_pdf (the UI dialogs themselves are not tested)."""
+    print(f"\n{Colors.BOLD}Testing: render_address_pdf{Colors.RESET}")
+    mzp = load_mzp_module()
+
+    cases = [
+        ("normal sender+recipient", "Schlomo Schapiro, Musterstr 1, 12345 Berlin",
+         "Max Mustermann\nMusterweg 2\n54321 Musterstadt", True, None),
+        ("empty sender allowed", "", "Max Mustermann\nMusterweg 2\n54321 Musterstadt", True, None),
+        ("umlauts pass", "Müller GmbH", "Bärbel Größe\nStraße 1\n80331 München", True, None),
+        ("too-long line fails", "", "A" * 200, False, None),
+        ("non-latin-1 char fails", "", "日本語", False, None),
+        ("empty recipient fails", "Sender", "   \n  ", False, None),
+        ("output width through pipeline", "Sender GmbH",
+         "Max Mustermann\nMusterweg 2\n54321 Musterstadt", True,
+         lambda path: check_address_label_pipeline(mzp, path)),
+    ]
+
+    passed_count = 0
+    failed_count = 0
+    for name, sender, recipient, should_succeed, extra_check in cases:
+        if test_render_address_pdf_case(mzp, name, sender, recipient, should_succeed, extra_check):
+            passed_count += 1
+        else:
+            failed_count += 1
+    return passed_count, failed_count
+
 def main():
     parser = argparse.ArgumentParser(description='Test Magic Zebra Printer')
     parser.add_argument('files', nargs='*', help='PDF files to test (if not specified, tests all repository test files)')
@@ -858,7 +936,11 @@ def main():
             passed_count += 1
         else:
             failed_count += 1
-    
+
+    address_passed, address_failed = run_address_label_tests()
+    passed_count += address_passed
+    failed_count += address_failed
+
     # Generate visual report if requested
     if args.visual:
         os.makedirs(args.report_dir, exist_ok=True)
