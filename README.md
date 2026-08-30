@@ -23,7 +23,7 @@ The 6mm right margin is added by default to provide better handling when the lab
 
 ## Installation
 
-1. Install the prerequisites with `brew install imagemagick` (Mac) or `sudo apt install imagemagick` (Debian/Ubuntu)
+1. Install the prerequisites with `brew install imagemagick` (Mac) or `sudo apt install imagemagick zenity` (Debian/Ubuntu) - `zenity` provides the address-label dialogs on Linux
 
 2. Make sure to have Python 3.6 or later installed.
 
@@ -81,7 +81,7 @@ For Windows I'm happy to accept your contribution with a suitable integration.
 
 Simple open a PDF file with the Magic Zebra Printer application (you can use drag and drop onto the launcher for this) or use the Zebra Printer service or PDF Service with it.
 
-On the command line pass the PDF file to print as the first argument. Optionally pass `-noprint` as second argument to suppress printing. It will leave the intermediate file for you to examine (next to the original file).
+On the command line pass the PDF file to print as the first argument. Optionally pass `-noprint` (or `--noprint`) to suppress printing. It will leave the intermediate file for you to examine (next to the original file). Run with `-h`/`--help` for the full option summary.
 
 To set the printer (instead of using the first printer to contain "zebra" in its name), set the `MAGIC_ZEBRA_PRINTER` environment variable with the name of the desired printer.
 

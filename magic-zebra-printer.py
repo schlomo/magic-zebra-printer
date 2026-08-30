@@ -29,10 +29,12 @@ import sys, os
 # Homebrew-installed binaries like ImageMagick's `convert`.
 os.environ["PATH"] = "/opt/homebrew/bin:/usr/local/bin:" + os.environ.get("PATH", "")
 
-import pypdf, math, sh, tempfile
+import argparse, pypdf, math, sh, tempfile
 from pathlib import Path
 from sh import lp, lpstat, ErrorReturnCode, CommandNotFound
 from fpdf import FPDF
+
+APP_TITLE = "Magic Zebra Printer"  # shown as the title of every native dialog
 
 # Where the last-used address-label sender is remembered between runs.
 CONFIG_DIR = Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config")) / "magic-zebra-printer"
@@ -427,10 +429,10 @@ def _show_error_dialog(msg):
     """Best-effort error dialog for the UI flow; die() still reports to stderr either way."""
     try:
         if sys.platform == "darwin":
-            script = f'display dialog "{_osascript_escape(msg)}" with title "Error" buttons {{"OK"}} default button "OK"'
+            script = f'display dialog "{_osascript_escape(msg)}" with title "{_osascript_escape(APP_TITLE)}" buttons {{"OK"}} default button "OK"'
             sh.osascript("-e", script)
         elif sys.platform.startswith("linux"):
-            sh.Command("zenity")("--error", f"--text={msg}")
+            sh.Command("zenity")("--error", f"--title={APP_TITLE}", f"--text={msg}")
     except (ErrorReturnCode, CommandNotFound):
         pass
 
@@ -440,16 +442,20 @@ def _prompt_darwin(sender_default):
 
     Returns (sender, recipient), or None if the user canceled either dialog.
     """
+    title = _osascript_escape(APP_TITLE)
     try:
         sender_script = (
-            f'text returned of (display dialog "Sender:" default answer "{_osascript_escape(sender_default)}")'
+            f'text returned of (display dialog "Sender:" default answer '
+            f'"{_osascript_escape(sender_default)}" with title "{title}")'
         )
         sender = str(sh.osascript("-e", sender_script))
         if sender.endswith("\n"):
             sender = sender[:-1]
 
         # Newlines in the default answer render the field as multiline.
-        recipient_script = 'text returned of (display dialog "Recipient:" default answer "\\n\\n\\n\\n")'
+        recipient_script = (
+            f'text returned of (display dialog "Recipient:" default answer "\\n\\n\\n\\n" with title "{title}")'
+        )
         recipient = str(sh.osascript("-e", recipient_script))
         if recipient.endswith("\n"):
             recipient = recipient[:-1]
@@ -473,7 +479,7 @@ def _prompt_linux(sender_default):
 
     try:
         sender = str(
-            zenity("--entry", "--title=Magic Zebra Printer", "--text=Sender:", f"--entry-text={sender_default}")
+            zenity("--entry", f"--title={APP_TITLE}", "--text=Sender:", f"--entry-text={sender_default}")
         )
         if sender.endswith("\n"):
             sender = sender[:-1]
@@ -485,7 +491,7 @@ def _prompt_linux(sender_default):
     try:
         try:
             recipient = str(
-                zenity("--text-info", "--editable", "--title=Magic Zebra Printer", f"--filename={recipient_file}")
+                zenity("--text-info", "--editable", f"--title={APP_TITLE}", f"--filename={recipient_file}")
             )
         except ErrorReturnCode:
             return None  # Cancel
@@ -499,15 +505,17 @@ def _prompt_linux(sender_default):
 
 def address_label_flow(printer, shouldprint):
     """No-file invocation: prompt for sender/recipient, render, then feed the
-    result through the normal PDF pipeline exactly like any other PDF."""
+    result through the normal PDF pipeline exactly like any other PDF.
+
+    Callers must only reach this on a platform the UI actually supports
+    (darwin or linux) - see the ui_mode gate in __main__.
+    """
     sender_default = load_sender()
 
     if sys.platform == "darwin":
         result = _prompt_darwin(sender_default)
-    elif sys.platform.startswith("linux"):
-        result = _prompt_linux(sender_default)
     else:
-        die(f"The address-label UI is not supported on {sys.platform}")
+        result = _prompt_linux(sender_default)
 
     if result is None:
         sys.exit(0)  # user canceled, not an error
@@ -535,25 +543,42 @@ def address_label_flow(printer, shouldprint):
             pass
 
 
+def parse_args():
+    parser = argparse.ArgumentParser(
+        description="Automatically scale a PDF or image to fit the label printer's paper width and print it.",
+        epilog="Set MAGIC_ZEBRA_PRINTER to choose the printer (default: the first idle printer with 'zebra' in its name).",
+    )
+    parser.add_argument(
+        "file",
+        nargs="?",
+        help="PDF or image file to print; omit it to open the address-label dialog flow (macOS/Linux)",
+    )
+    parser.add_argument(
+        "-noprint",
+        "--noprint",
+        action="store_true",
+        help="Convert only, keep the output PDF and report its path instead of printing",
+    )
+    return parser.parse_args()
+
+
 if __name__ == "__main__":
-    # No file argument (or a lone -noprint) opens the address-label UI flow
-    # instead of dying; a file argument keeps the existing behavior exactly.
-    ui_mode = len(sys.argv) == 1 or (len(sys.argv) == 2 and sys.argv[1] == "-noprint")
+    args = parse_args()
 
-    if ui_mode:
-        shouldprint = len(sys.argv) == 1
-    else:
-        try:
-            anyFile = sys.argv[1]
-            if not os.path.exists(anyFile):
-                raise Exception(f"{anyFile} doesn't exist")
-        except IndexError:
-            die("1st arg must be a file")
+    # No file argument opens the address-label UI flow instead of dying, but
+    # only on a platform that flow actually supports; a file argument keeps
+    # the existing behavior exactly on every platform.
+    ui_mode = args.file is None and (sys.platform == "darwin" or sys.platform.startswith("linux"))
 
-        except Exception as e:
-            die(f"1st arg >{anyFile}< must be a file:\n{e}")
+    if args.file is None and not ui_mode:
+        die("1st arg must be a file")
 
-        shouldprint = not (len(sys.argv) > 2 and sys.argv[2] == "-noprint")
+    if not ui_mode:
+        anyFile = args.file
+        if not os.path.exists(anyFile):
+            die(f"1st arg >{anyFile}< must be a file:\n{anyFile} doesn't exist")
+
+    shouldprint = not args.noprint
 
     if shouldprint:
         printer = getPrinter()
