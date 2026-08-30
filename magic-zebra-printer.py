@@ -38,30 +38,20 @@ def die(msg):
     sys.exit(1)
 
 
-try:
-    # `from sh import convert` resolves the command eagerly, so a missing
-    # binary must be caught here (ImportError), not via a later call.
-    from sh import convert
-
-    convert("-version")
-except (ImportError, ErrorReturnCode, CommandNotFound):
-    die(
-        "ImageMagick's `convert` not found. Install it with "
-        "`brew install imagemagick` (Mac) or `sudo apt install imagemagick` (Linux)."
-    )
-
-
 def notify(msg, title="Printing"):
     print(f"{title}\n{msg}")
     if sys.platform == "darwin":
         escaped_msg = msg.replace("\\", "\\\\").replace('"', '\\"')
         escaped_title = title.replace("\\", "\\\\").replace('"', '\\"')
         script = f'display notification "{escaped_msg}" with title "{escaped_title}"'
-        sh.osascript("-e", script)
+        try:
+            sh.osascript("-e", script)
+        except (ErrorReturnCode, CommandNotFound):
+            pass  # notification is best-effort
     elif sys.platform.startswith("linux"):
         try:
             sh.Command("notify-send")(title, msg)
-        except sh.CommandNotFound:
+        except (ErrorReturnCode, CommandNotFound):
             pass  # notification is best-effort
 
 
@@ -80,11 +70,24 @@ def getPrinter():
 
 def viaConvert(anyFile, printer, shouldprint=True):
     """Convert non-PDF files to PDF and process via viaPYPDF."""
+    # `from sh import convert` resolves the command eagerly, so a missing
+    # binary must be caught here (ImportError), not via a later call. Only
+    # done here, not at module level, since the PDF-only path never needs it.
+    try:
+        from sh import convert
+
+        convert("-version")
+    except (ImportError, ErrorReturnCode, CommandNotFound):
+        die(
+            "ImageMagick's `convert` not found. Install it with "
+            "`brew install imagemagick` (Mac) or `sudo apt install imagemagick` (Linux)."
+        )
+
     base_without_ext = os.path.splitext(anyFile)[0]
-    
+
     # Create a temporary PDF file
     temp_pdf = f"{base_without_ext}_temp.pdf"
-    
+
     # Convert to PDF using ImageMagick
     # We don't resize here - let viaPYPDF handle all the sizing
     try:
