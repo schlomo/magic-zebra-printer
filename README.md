@@ -17,6 +17,7 @@ My problem is that I use it to print all sorts of shipping labels or other small
 * Determine the printer (looking for `*zebra*`) to use
 * Should work on Mac, Linux & Windows
 * Includes PDF Service, Service and Application for MacOS. Application can be put into Dock as drag-n-drop target.
+* Also doubles as an address label printer: run it with no file and it prompts for a sender and recipient via native dialogs, then prints a DIN 5008 style address label.
 
 The 6mm right margin is added by default to provide better handling when the label is removed from the printer, preventing content from being too close to the edge.
 
@@ -84,6 +85,17 @@ On the command line pass the PDF file to print as the first argument. Optionally
 
 To set the printer (instead of using the first printer to contain "zebra" in its name), set the `MAGIC_ZEBRA_PRINTER` environment variable with the name of the desired printer.
 
+### Address labels
+
+Run the script with no file argument (or with `-noprint` as the only argument) to print a DIN 5008 style address label instead:
+
+* A native dialog asks for the **sender** (single line, prefilled with whatever you entered last time) and then the **recipient** (multiline). Cancelling either dialog exits quietly without printing anything.
+* The sender is remembered in `$XDG_CONFIG_HOME/magic-zebra-printer/sender` (defaults to `~/.config/magic-zebra-printer/sender`) so you only have to type it once.
+* The label shows the sender in 12pt Helvetica, centered, with a thin rule underneath, and the recipient in 16pt Helvetica below it, left-aligned, one line per line typed. Font sizes are fixed - text is never shrunk or wrapped to fit.
+* If a line is too long for the label, or contains a character outside Latin-1 (the PDF core fonts don't support emoji or CJK, but German umlauts and ß work fine), you get a clear error dialog and the run stops - nothing is printed. An empty recipient is also rejected; an empty sender is fine (the sender line and rule are simply left out).
+* With no `-noprint` it prints the label immediately, same as any other file; with `-noprint` it renders the label, keeps the PDF, and reports its path in the notification instead of printing.
+* On Linux this needs `zenity` (`sudo apt install zenity`); on macOS it uses the built-in `osascript`, no extra install needed.
+
 ## Bugs
 
 * Not much error handling
@@ -136,3 +148,5 @@ The test suite validates:
 - ✓ Various rotation angles (90°, 180°, 270°) are handled correctly
 
 Personal/private PDFs (like shipping labels) can be tested without adding them to the repository.
+
+The suite also covers `render_address_pdf` directly (normal sender+recipient, empty sender, an over-long line, a non-Latin-1 character, German umlauts, and the rendered output going through the full pipeline at exactly 10.6cm paper width). The native dialogs themselves aren't automatable and aren't tested; only the rendering function they call is.

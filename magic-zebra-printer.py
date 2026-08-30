@@ -29,8 +29,14 @@ import sys, os
 # Homebrew-installed binaries like ImageMagick's `convert`.
 os.environ["PATH"] = "/opt/homebrew/bin:/usr/local/bin:" + os.environ.get("PATH", "")
 
-import pypdf, math, sh
+import pypdf, math, sh, tempfile
+from pathlib import Path
 from sh import lp, lpstat, ErrorReturnCode, CommandNotFound
+from fpdf import FPDF
+
+# Where the last-used address-label sender is remembered between runs.
+CONFIG_DIR = Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config")) / "magic-zebra-printer"
+SENDER_FILE = CONFIG_DIR / "sender"
 
 
 def die(msg):
@@ -38,12 +44,15 @@ def die(msg):
     sys.exit(1)
 
 
+def _osascript_escape(text):
+    """Escape a string for embedding in a double-quoted AppleScript literal."""
+    return text.replace("\\", "\\\\").replace('"', '\\"')
+
+
 def notify(msg, title="Printing"):
     print(f"{title}\n{msg}")
     if sys.platform == "darwin":
-        escaped_msg = msg.replace("\\", "\\\\").replace('"', '\\"')
-        escaped_title = title.replace("\\", "\\\\").replace('"', '\\"')
-        script = f'display notification "{escaped_msg}" with title "{escaped_title}"'
+        script = f'display notification "{_osascript_escape(msg)}" with title "{_osascript_escape(title)}"'
         try:
             sh.osascript("-e", script)
         except (ErrorReturnCode, CommandNotFound):
@@ -311,18 +320,223 @@ def viaPYPDF(pdfFile, printer, shouldprint=True, original_filename=None):
     return (info, f"Converted {display_name} → {outPdfFile}")
 
 
-if __name__ == "__main__":
+def load_sender():
+    """Read the remembered sender line, or "" if none was saved yet."""
     try:
-        anyFile = sys.argv[1]
-        if not os.path.exists(anyFile):
-            raise Exception(f"{anyFile} doesn't exist")
-    except IndexError:
-        die("1st arg must be a file")
+        return SENDER_FILE.read_text(encoding="utf-8").strip()
+    except FileNotFoundError:
+        return ""
 
-    except Exception as e:
-        die(f"1st arg >{anyFile}< must be a file:\n{e}")
 
-    shouldprint = not (len(sys.argv) > 2 and sys.argv[2] == "-noprint")
+def save_sender(sender):
+    CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+    SENDER_FILE.write_text(sender, encoding="utf-8")
+
+
+def _check_latin1(text):
+    """fpdf2's core fonts only support Latin-1; fail clearly on anything else."""
+    try:
+        text.encode("latin-1")
+    except UnicodeEncodeError as e:
+        raise ValueError(
+            f"Unsupported character {text[e.start:e.end]!r} in {text!r} "
+            "- PDF fonts here only support Latin-1 (e.g. German umlauts, no emoji/CJK)"
+        ) from e
+
+
+def _line_height_mm(font_size_pt, leading=1.3):
+    return font_size_pt / 72 * 25.4 * leading
+
+
+def render_address_pdf(sender, recipient, out_path):
+    """Render a DIN-5008-style address label at exactly CONTENT_WIDTH_CM wide.
+
+    The page carries no margin of its own - it is sized to the pipeline's
+    content width so viaPYPDF's scale factor comes out to 1.0 and the 6mm
+    right margin is added there, once, instead of being duplicated here.
+
+    viaPYPDF auto-rotates any page where width > height (its "landscape to
+    portrait" step) and then rescales so the *shorter* side becomes exactly
+    CONTENT_WIDTH_CM - for a short address that would stretch our fixed font
+    sizes well past their nominal point size. The height floor is therefore
+    the page width itself (not some smaller cosmetic minimum): that keeps
+    height >= width, so the auto-rotate never fires and the scale factor
+    that comes out of the pipeline is always exactly 1.0.
+    """
+    PADDING_MM = 4
+    RULE_GAP_MM = 1.5
+    SENDER_PT = 12
+    RECIPIENT_PT = 16
+
+    sender = sender.strip()
+    recipient_lines = recipient.splitlines()
+    if not any(line.strip() for line in recipient_lines):
+        raise ValueError("Recipient must not be empty")
+
+    for line in ([sender] if sender else []) + recipient_lines:
+        _check_latin1(line)
+
+    width_mm = CONTENT_WIDTH_CM * 10
+    printable_width_mm = width_mm - 2 * PADDING_MM
+
+    sender_line_height = _line_height_mm(SENDER_PT)
+    recipient_line_height = _line_height_mm(RECIPIENT_PT)
+    content_height = (sender_line_height + RULE_GAP_MM if sender else 0) + (
+        recipient_line_height * len(recipient_lines)
+    )
+    height_mm = max(content_height + 2 * PADDING_MM, width_mm)
+
+    pdf = FPDF(unit="mm", format=(width_mm, height_mm))
+    pdf.set_margins(0, 0, 0)
+    pdf.set_auto_page_break(False)
+    pdf.add_page()
+
+    y = PADDING_MM
+    if sender:
+        pdf.set_font("Helvetica", size=SENDER_PT)
+        if pdf.get_string_width(sender) > printable_width_mm:
+            raise ValueError(f"Sender line too long to fit on the label: {sender!r}")
+        pdf.set_xy(PADDING_MM, y)
+        pdf.cell(printable_width_mm, sender_line_height, sender, align="C")
+        y += sender_line_height
+        pdf.set_line_width(0.2)
+        pdf.line(PADDING_MM, y, width_mm - PADDING_MM, y)
+        y += RULE_GAP_MM
+
+    pdf.set_font("Helvetica", size=RECIPIENT_PT)
+    for line in recipient_lines:
+        if pdf.get_string_width(line) > printable_width_mm:
+            raise ValueError(f"Recipient line too long to fit on the label: {line!r}")
+        pdf.set_xy(PADDING_MM, y)
+        pdf.cell(printable_width_mm, recipient_line_height, line, align="L")
+        y += recipient_line_height
+
+    pdf.output(str(out_path))
+
+
+def _show_error_dialog(msg):
+    """Best-effort error dialog for the UI flow; die() still reports to stderr either way."""
+    try:
+        if sys.platform == "darwin":
+            script = f'display dialog "{_osascript_escape(msg)}" with title "Error" buttons {{"OK"}} default button "OK"'
+            sh.osascript("-e", script)
+        elif sys.platform.startswith("linux"):
+            sh.Command("zenity")("--error", f"--text={msg}")
+    except (ErrorReturnCode, CommandNotFound):
+        pass
+
+
+def _prompt_darwin(sender_default):
+    """Two native macOS dialogs: single-line sender, multiline recipient.
+
+    Returns (sender, recipient), or None if the user canceled either dialog.
+    """
+    try:
+        sender_script = (
+            f'text returned of (display dialog "Sender:" default answer "{_osascript_escape(sender_default)}")'
+        )
+        sender = str(sh.osascript("-e", sender_script))
+        if sender.endswith("\n"):
+            sender = sender[:-1]
+
+        # Newlines in the default answer render the field as multiline.
+        recipient_script = 'text returned of (display dialog "Recipient:" default answer "\\n\\n\\n\\n")'
+        recipient = str(sh.osascript("-e", recipient_script))
+        if recipient.endswith("\n"):
+            recipient = recipient[:-1]
+    except ErrorReturnCode as e:
+        if "User canceled" in str(e.stderr, "utf-8", errors="ignore"):
+            return None
+        raise
+
+    return sender, recipient
+
+
+def _prompt_linux(sender_default):
+    """zenity --entry for sender, zenity --text-info --editable for recipient."""
+    try:
+        zenity = sh.Command("zenity")
+    except CommandNotFound:
+        die("zenity not found. Install it with `sudo apt install zenity`.")
+
+    try:
+        sender = str(
+            zenity("--entry", "--title=Magic Zebra Printer", "--text=Sender:", f"--entry-text={sender_default}")
+        )
+        if sender.endswith("\n"):
+            sender = sender[:-1]
+    except ErrorReturnCode:
+        return None  # Cancel
+
+    fd, recipient_file = tempfile.mkstemp(suffix=".txt")
+    os.close(fd)
+    try:
+        try:
+            recipient = str(
+                zenity("--text-info", "--editable", "--title=Magic Zebra Printer", f"--filename={recipient_file}")
+            )
+        except ErrorReturnCode:
+            return None  # Cancel
+    finally:
+        os.remove(recipient_file)
+
+    if recipient.endswith("\n"):
+        recipient = recipient[:-1]
+    return sender, recipient
+
+
+def address_label_flow(printer, shouldprint):
+    """No-file invocation: prompt for sender/recipient, render, then feed the
+    result through the normal PDF pipeline exactly like any other PDF."""
+    sender_default = load_sender()
+
+    if sys.platform == "darwin":
+        result = _prompt_darwin(sender_default)
+    elif sys.platform.startswith("linux"):
+        result = _prompt_linux(sender_default)
+    else:
+        die(f"The address-label UI is not supported on {sys.platform}")
+
+    if result is None:
+        sys.exit(0)  # user canceled, not an error
+    sender, recipient = result
+
+    fd, tmp_path = tempfile.mkstemp(suffix="_address.pdf")
+    os.close(fd)
+    tmp_pdf = Path(tmp_path)
+    try:
+        try:
+            render_address_pdf(sender, recipient, tmp_pdf)
+        except ValueError as e:
+            _show_error_dialog(str(e))
+            die(str(e))
+
+        save_sender(sender)
+        return viaPYPDF(str(tmp_pdf), printer, shouldprint)
+    finally:
+        if tmp_pdf.exists():
+            tmp_pdf.unlink()
+
+
+if __name__ == "__main__":
+    # No file argument (or a lone -noprint) opens the address-label UI flow
+    # instead of dying; a file argument keeps the existing behavior exactly.
+    ui_mode = len(sys.argv) == 1 or (len(sys.argv) == 2 and sys.argv[1] == "-noprint")
+
+    if ui_mode:
+        shouldprint = len(sys.argv) == 1
+    else:
+        try:
+            anyFile = sys.argv[1]
+            if not os.path.exists(anyFile):
+                raise Exception(f"{anyFile} doesn't exist")
+        except IndexError:
+            die("1st arg must be a file")
+
+        except Exception as e:
+            die(f"1st arg >{anyFile}< must be a file:\n{e}")
+
+        shouldprint = not (len(sys.argv) > 2 and sys.argv[2] == "-noprint")
 
     if shouldprint:
         printer = getPrinter()
@@ -331,10 +545,13 @@ if __name__ == "__main__":
         printer = "NONE"
         print("Not printing")
 
-    suffix = os.path.splitext(anyFile)[1].lower()
-    if suffix == ".pdf":
-        (msg, title) = viaPYPDF(anyFile, printer, shouldprint)
+    if ui_mode:
+        (msg, title) = address_label_flow(printer, shouldprint)
     else:
-        (msg, title) = viaConvert(anyFile, printer, shouldprint)
+        suffix = os.path.splitext(anyFile)[1].lower()
+        if suffix == ".pdf":
+            (msg, title) = viaPYPDF(anyFile, printer, shouldprint)
+        else:
+            (msg, title) = viaConvert(anyFile, printer, shouldprint)
 
     notify(msg, title)
