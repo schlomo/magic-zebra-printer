@@ -1,5 +1,7 @@
 # Magic Zebra Printer
 
+[![Test](https://github.com/schlomo/magic-zebra-printer/actions/workflows/test.yml/badge.svg)](https://github.com/schlomo/magic-zebra-printer/actions/workflows/test.yml)
+
 *The blog article [My Magic Zebra Printer - Why Software Rules the World
 ](https://schlomo.schapiro.org/2024/05/my-magic-zebra-printer-why-software.html) has a demo of Magic Zebra Printer in action*
 

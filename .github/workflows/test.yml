@@ -1,0 +1,28 @@
+name: Test
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # `sh` resolves `lp`/`lpstat` at import time, so cups-client must be
+      # present even though the test suite always runs with -noprint.
+      - name: Install system dependencies
+        run: sudo apt-get update && sudo apt-get install -y imagemagick ghostscript cups-client
+
+      - name: Install Python dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run test suite
+        run: ./test_magic_zebra_printer.py
