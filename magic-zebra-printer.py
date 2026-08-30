@@ -23,27 +23,42 @@ PAPER_WIDTH_CM = CONTENT_WIDTH_CM + RIGHT_MARGIN_CM  # Total paper width
 """
 
 import sys, os
-import pypdf, math
-from sh import lp, lpstat
-from notifypy import Notify
+
+# This runs as a macOS drag-and-drop target launched by launchd, which provides
+# a minimal PATH that doesn't include Homebrew. Prepend it so `sh` can find
+# Homebrew-installed binaries like ImageMagick's `convert`.
+os.environ["PATH"] = "/opt/homebrew/bin:/usr/local/bin:" + os.environ.get("PATH", "")
+
+import pypdf, math, sh
+from sh import lp, lpstat, convert, ErrorReturnCode, CommandNotFound
+
+
+def die(msg):
+    print(f"ERROR: {msg}", file=sys.stderr)
+    sys.exit(1)
+
 
 try:
-    from sh import convert, identify
-except:
-    import sh
-
-    convert = sh.Command("/opt/homebrew/bin/convert")
-    identify = sh.Command("/opt/homebrew/bin/identify")
+    convert("-version")
+except (ErrorReturnCode, CommandNotFound):
+    die(
+        "ImageMagick's `convert` not found. Install it with "
+        "`brew install imagemagick` (Mac) or `sudo apt install imagemagick` (Linux)."
+    )
 
 
 def notify(msg, title="Printing"):
-    notification = Notify(
-        default_notification_title=title,
-        default_application_name="Magic Zebra Printer",
-    )
-    notification.message = msg
-    notification.send(block=False)
     print(f"{title}\n{msg}")
+    if sys.platform == "darwin":
+        escaped_msg = msg.replace("\\", "\\\\").replace('"', '\\"')
+        escaped_title = title.replace("\\", "\\\\").replace('"', '\\"')
+        script = f'display notification "{escaped_msg}" with title "{escaped_title}"'
+        sh.osascript("-e", script)
+    elif sys.platform.startswith("linux"):
+        try:
+            sh.Command("notify-send")(title, msg)
+        except sh.CommandNotFound:
+            pass  # notification is best-effort
 
 
 def getPrinter():
@@ -57,11 +72,6 @@ def getPrinter():
         if "zebra" in printer.lower():
             return printer
     die("Cannot find any Zebra printer")
-
-
-def die(msg):
-    print(f"ERROR: {msg}", file=sys.stderr)
-    sys.exit(1)
 
 
 def viaConvert(anyFile, printer, shouldprint=True):
@@ -119,6 +129,9 @@ def viaPYPDF(pdfFile, printer, shouldprint=True, original_filename=None):
     reader = pypdf.PdfReader(pdfFile)
     writer = pypdf.PdfWriter()
 
+    if len(reader.pages) == 0:
+        die(f"{pdfFile} has zero pages")
+
     content_width = CONTENT_WIDTH_CM * 72 / 2.54  # Use constant
     margin_right = RIGHT_MARGIN_CM * 72 / 2.54  # Use constant
     page_width = content_width + margin_right  # Total page width
@@ -126,6 +139,7 @@ def viaPYPDF(pdfFile, printer, shouldprint=True, original_filename=None):
     print(f"Right margin: {margin_right:.1f} points ({RIGHT_MARGIN_CM*10:.1f}mm)")
     print(f"Total page width: {page_width:.1f} points ({PAPER_WIDTH_CM*10:.1f}mm)")
 
+    page_infos = []
     for page_num, page in enumerate(reader.pages):
         print(f"\nProcessing page {page_num + 1}:")
         
@@ -142,8 +156,7 @@ def viaPYPDF(pdfFile, printer, shouldprint=True, original_filename=None):
 
         # Calculate the transformation to map from media box to crop box
         crop = page.cropbox
-        media = page.mediabox
-        
+
         # Create transformation matrix
         transform = pypdf.Transformation()
         transform = transform.translate(-crop.left, -crop.bottom)
@@ -247,7 +260,11 @@ def viaPYPDF(pdfFile, printer, shouldprint=True, original_filename=None):
         
         writer.add_page(final_page)
 
-        info = f"{width:.1f}×{height:.1f} {rotation}° ⇒ {round(page_width)}x{round(page_height)} (content: {round(content_width)}x{round(content_height)}) {scale_factor:.1%}"
+        page_infos.append(
+            f"page {page_num + 1}: {width:.1f}×{height:.1f} {rotation}° ⇒ {round(page_width)}x{round(page_height)} (content: {round(content_width)}x{round(content_height)}) {scale_factor:.1%}"
+        )
+
+    info = "\n".join(page_infos)
 
     # Generate output filename based on original filename if provided
     if original_filename:
@@ -288,7 +305,7 @@ if __name__ == "__main__":
         if not os.path.exists(anyFile):
             raise Exception(f"{anyFile} doesn't exist")
     except IndexError:
-        die(f"1st arg >{anyFile}< must be a file")
+        die("1st arg must be a file")
 
     except Exception as e:
         die(f"1st arg >{anyFile}< must be a file:\n{e}")
@@ -303,7 +320,7 @@ if __name__ == "__main__":
         print("Not printing")
 
     suffix = os.path.splitext(anyFile)[1].lower()
-    if ".pdf" in suffix:
+    if suffix == ".pdf":
         (msg, title) = viaPYPDF(anyFile, printer, shouldprint)
     else:
         (msg, title) = viaConvert(anyFile, printer, shouldprint)

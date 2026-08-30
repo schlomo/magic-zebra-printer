@@ -1,5 +1,2 @@
 pypdf
 sh
-notify-py
-desktop-notifier
-black
