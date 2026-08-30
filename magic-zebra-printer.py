@@ -2,7 +2,7 @@
 
 # Configuration constants
 CONTENT_WIDTH_CM = 10.0  # Content width in cm
-RIGHT_MARGIN_CM = 0.6    # Right margin in cm
+RIGHT_MARGIN_CM = 0.6  # Right margin in cm
 PAPER_WIDTH_CM = CONTENT_WIDTH_CM + RIGHT_MARGIN_CM  # Total paper width
 
 """
@@ -37,7 +37,10 @@ from fpdf import FPDF
 APP_TITLE = "Magic Zebra Printer"  # shown as the title of every native dialog
 
 # Where the last-used address-label sender is remembered between runs.
-CONFIG_DIR = Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config")) / "magic-zebra-printer"
+CONFIG_DIR = (
+    Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config"))
+    / "magic-zebra-printer"
+)
 SENDER_FILE = CONFIG_DIR / "sender"
 
 
@@ -107,14 +110,10 @@ def viaConvert(anyFile, printer, shouldprint=True):
     # Convert to PDF using ImageMagick
     # We don't resize here - let viaPYPDF handle all the sizing
     try:
-        convert(
-            anyFile,
-            "-density", "208",  # High quality conversion
-            temp_pdf
-        )
+        convert(anyFile, "-density", "208", temp_pdf)  # High quality conversion
     except Exception as e:
         die(f"Failed to convert {anyFile} to PDF: {e}")
-    
+
     try:
         # Process the temporary PDF through the standard PDF pipeline
         # Pass the original filename so viaPYPDF can generate the correct output name
@@ -126,7 +125,9 @@ def viaConvert(anyFile, printer, shouldprint=True):
             os.remove(temp_pdf)
 
 
-def viaPYPDF(pdfFile, printer, shouldprint=True, original_filename=None, auto_rotate=True):
+def viaPYPDF(
+    pdfFile, printer, shouldprint=True, original_filename=None, auto_rotate=True
+):
     """
     Process a PDF file for printing.
 
@@ -140,7 +141,7 @@ def viaPYPDF(pdfFile, printer, shouldprint=True, original_filename=None, auto_ro
             (e.g. a rendered address label), where this would instead rescale and
             stretch it.
     """
-    
+
     def getSize(page):
         # Use cropbox instead of mediabox to respect cropping
         box = page.cropbox
@@ -162,14 +163,16 @@ def viaPYPDF(pdfFile, printer, shouldprint=True, original_filename=None, auto_ro
     content_width = CONTENT_WIDTH_CM * 72 / 2.54  # Use constant
     margin_right = RIGHT_MARGIN_CM * 72 / 2.54  # Use constant
     page_width = content_width + margin_right  # Total page width
-    print(f"\nTarget content width: {content_width:.1f} points ({content_width/72:.1f} inches)")
+    print(
+        f"\nTarget content width: {content_width:.1f} points ({content_width/72:.1f} inches)"
+    )
     print(f"Right margin: {margin_right:.1f} points ({RIGHT_MARGIN_CM*10:.1f}mm)")
     print(f"Total page width: {page_width:.1f} points ({PAPER_WIDTH_CM*10:.1f}mm)")
 
     page_infos = []
     for page_num, page in enumerate(reader.pages):
         print(f"\nProcessing page {page_num + 1}:")
-        
+
         # Get initial state
         rotation = page.rotation
         width, height = getSize(page)
@@ -177,8 +180,7 @@ def viaPYPDF(pdfFile, printer, shouldprint=True, original_filename=None, auto_ro
 
         # Create a new page with the same size as the cropped area
         new_page = pypdf.PageObject.create_blank_page(
-            width=page.cropbox.width,
-            height=page.cropbox.height
+            width=page.cropbox.width, height=page.cropbox.height
         )
 
         # Calculate the transformation to map from media box to crop box
@@ -187,7 +189,7 @@ def viaPYPDF(pdfFile, printer, shouldprint=True, original_filename=None, auto_ro
         # Create transformation matrix
         transform = pypdf.Transformation()
         transform = transform.translate(-crop.left, -crop.bottom)
-        
+
         # Copy the content with transformation
         new_page.merge_transformed_page(page, transform)
 
@@ -198,8 +200,7 @@ def viaPYPDF(pdfFile, printer, shouldprint=True, original_filename=None, auto_ro
             width, height = height, width
             # Create a new page with swapped dimensions
             rotated_page = pypdf.PageObject.create_blank_page(
-                width=width,
-                height=height
+                width=width, height=height
             )
             # Create transformation: rotate -90° (270°) and translate to center
             transform = pypdf.Transformation()
@@ -213,8 +214,7 @@ def viaPYPDF(pdfFile, printer, shouldprint=True, original_filename=None, auto_ro
             width, height = height, width
             # Create a new page with swapped dimensions
             rotated_page = pypdf.PageObject.create_blank_page(
-                width=width,
-                height=height
+                width=width, height=height
             )
             # Create transformation: rotate 90° and translate
             transform = pypdf.Transformation()
@@ -227,8 +227,7 @@ def viaPYPDF(pdfFile, printer, shouldprint=True, original_filename=None, auto_ro
             # For 180° rotation, dimensions stay the same
             # Create a new page with same dimensions
             rotated_page = pypdf.PageObject.create_blank_page(
-                width=width,
-                height=height
+                width=width, height=height
             )
             # Create transformation: rotate 180° and translate
             transform = pypdf.Transformation()
@@ -250,8 +249,7 @@ def viaPYPDF(pdfFile, printer, shouldprint=True, original_filename=None, auto_ro
             width, height = height, width
             # Create a new page with swapped dimensions
             rotated_page = pypdf.PageObject.create_blank_page(
-                width=width,
-                height=height
+                width=width, height=height
             )
             # Create transformation: rotate -90° and translate
             transform = pypdf.Transformation()
@@ -263,7 +261,7 @@ def viaPYPDF(pdfFile, printer, shouldprint=True, original_filename=None, auto_ro
         # Calculate scaling to fit the content to 100mm width while maintaining aspect ratio
         scale_factor = content_width / width
         content_height = math.ceil(height * scale_factor)
-        
+
         # Page height is same as content height (no top/bottom margins)
         page_height = content_height
 
@@ -275,16 +273,15 @@ def viaPYPDF(pdfFile, printer, shouldprint=True, original_filename=None, auto_ro
 
         # First scale the content to the target size
         new_page.scale_to(content_width, content_height)
-        
+
         # Create a larger page with the right margin
         final_page = pypdf.PageObject.create_blank_page(
-            width=page_width,
-            height=page_height
+            width=page_width, height=page_height
         )
-        
+
         # Merge the scaled content onto the larger page (positioned at left edge)
         final_page.merge_page(new_page)
-        
+
         writer.add_page(final_page)
 
         page_infos.append(
@@ -297,14 +294,16 @@ def viaPYPDF(pdfFile, printer, shouldprint=True, original_filename=None, auto_ro
     if original_filename:
         # For converted files, use the original filename with its extension
         base_without_ext = os.path.splitext(original_filename)[0]
-        original_ext = os.path.splitext(original_filename)[1][1:]  # Extension without dot
+        original_ext = os.path.splitext(original_filename)[1][
+            1:
+        ]  # Extension without dot
         outPdfFile = f"{base_without_ext}_{original_ext}_print.pdf"
         display_name = os.path.basename(original_filename)
     else:
         # For PDF files, use the standard naming
         outPdfFile = os.path.splitext(pdfFile)[0] + "_print.pdf"
         display_name = os.path.basename(pdfFile)
-    
+
     with open(outPdfFile, "wb") as f:
         writer.write(f)
 
@@ -453,9 +452,7 @@ def _prompt_darwin(sender_default):
             sender = sender[:-1]
 
         # Newlines in the default answer render the field as multiline.
-        recipient_script = (
-            f'text returned of (display dialog "Recipient:" default answer "\\n\\n\\n\\n" with title "{title}")'
-        )
+        recipient_script = f'text returned of (display dialog "Recipient:" default answer "\\n\\n\\n\\n" with title "{title}")'
         recipient = str(sh.osascript("-e", recipient_script))
         if recipient.endswith("\n"):
             recipient = recipient[:-1]
@@ -479,7 +476,12 @@ def _prompt_linux(sender_default):
 
     try:
         sender = str(
-            zenity("--entry", f"--title={APP_TITLE}", "--text=Sender:", f"--entry-text={sender_default}")
+            zenity(
+                "--entry",
+                f"--title={APP_TITLE}",
+                "--text=Sender:",
+                f"--entry-text={sender_default}",
+            )
         )
         if sender.endswith("\n"):
             sender = sender[:-1]
@@ -491,7 +493,12 @@ def _prompt_linux(sender_default):
     try:
         try:
             recipient = str(
-                zenity("--text-info", "--editable", f"--title={APP_TITLE}", f"--filename={recipient_file}")
+                zenity(
+                    "--text-info",
+                    "--editable",
+                    f"--title={APP_TITLE}",
+                    f"--filename={recipient_file}",
+                )
             )
         except ErrorReturnCode:
             return None  # Cancel
@@ -568,7 +575,9 @@ if __name__ == "__main__":
     # No file argument opens the address-label UI flow instead of dying, but
     # only on a platform that flow actually supports; a file argument keeps
     # the existing behavior exactly on every platform.
-    ui_mode = args.file is None and (sys.platform == "darwin" or sys.platform.startswith("linux"))
+    ui_mode = (args.file is None or args.file == "") and (
+        sys.platform == "darwin" or sys.platform.startswith("linux")
+    )
 
     if args.file is None and not ui_mode:
         die("1st arg must be a file")
