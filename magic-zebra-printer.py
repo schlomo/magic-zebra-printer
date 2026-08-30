@@ -30,7 +30,7 @@ import sys, os
 os.environ["PATH"] = "/opt/homebrew/bin:/usr/local/bin:" + os.environ.get("PATH", "")
 
 import pypdf, math, sh
-from sh import lp, lpstat, convert, ErrorReturnCode, CommandNotFound
+from sh import lp, lpstat, ErrorReturnCode, CommandNotFound
 
 
 def die(msg):
@@ -39,8 +39,12 @@ def die(msg):
 
 
 try:
+    # `from sh import convert` resolves the command eagerly, so a missing
+    # binary must be caught here (ImportError), not via a later call.
+    from sh import convert
+
     convert("-version")
-except (ErrorReturnCode, CommandNotFound):
+except (ImportError, ErrorReturnCode, CommandNotFound):
     die(
         "ImageMagick's `convert` not found. Install it with "
         "`brew install imagemagick` (Mac) or `sudo apt install imagemagick` (Linux)."
