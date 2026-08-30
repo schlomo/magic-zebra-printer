@@ -10,11 +10,11 @@ jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
-          python-version: "3.12"
+          python-version: "3.14"
 
       # `sh` resolves `lp`/`lpstat` at import time, so cups-client must be
       # present even though the test suite always runs with -noprint.
