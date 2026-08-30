@@ -124,15 +124,19 @@ def viaConvert(anyFile, printer, shouldprint=True):
             os.remove(temp_pdf)
 
 
-def viaPYPDF(pdfFile, printer, shouldprint=True, original_filename=None):
+def viaPYPDF(pdfFile, printer, shouldprint=True, original_filename=None, auto_rotate=True):
     """
     Process a PDF file for printing.
-    
+
     Args:
         pdfFile: The PDF file to process
         printer: The printer to use
         shouldprint: Whether to actually print or just convert
         original_filename: The original filename (if different from pdfFile, e.g., when converting from image)
+        auto_rotate: Rotate a landscape page to portrait to maximize print size.
+            Disable for content that is already correctly oriented by construction
+            (e.g. a rendered address label), where this would instead rescale and
+            stretch it.
     """
     
     def getSize(page):
@@ -238,7 +242,7 @@ def viaPYPDF(pdfFile, printer, shouldprint=True, original_filename=None):
             printDebugInfo(new_page, "After rotation", width, height, 0)
 
         # Check if we need to rotate landscape to portrait
-        if width > height:
+        if auto_rotate and width > height:
             print(f"\nHandling landscape to portrait rotation:")
             # Swap dimensions
             width, height = height, width
@@ -354,19 +358,16 @@ def render_address_pdf(sender, recipient, out_path):
     The page carries no margin of its own - it is sized to the pipeline's
     content width so viaPYPDF's scale factor comes out to 1.0 and the 6mm
     right margin is added there, once, instead of being duplicated here.
-
-    viaPYPDF auto-rotates any page where width > height (its "landscape to
-    portrait" step) and then rescales so the *shorter* side becomes exactly
-    CONTENT_WIDTH_CM - for a short address that would stretch our fixed font
-    sizes well past their nominal point size. The height floor is therefore
-    the page width itself (not some smaller cosmetic minimum): that keeps
-    height >= width, so the auto-rotate never fires and the scale factor
-    that comes out of the pipeline is always exactly 1.0.
+    Callers must pass this through viaPYPDF(..., auto_rotate=False): the
+    label is already correctly oriented by construction, and viaPYPDF's
+    landscape-to-portrait auto-rotate would otherwise rescale and stretch
+    these fixed font sizes.
     """
     PADDING_MM = 4
     RULE_GAP_MM = 1.5
     SENDER_PT = 12
     RECIPIENT_PT = 16
+    MIN_HEIGHT_MM = 30  # 3cm
 
     sender = sender.strip()
     recipient_lines = recipient.splitlines()
@@ -384,7 +385,7 @@ def render_address_pdf(sender, recipient, out_path):
     content_height = (sender_line_height + RULE_GAP_MM if sender else 0) + (
         recipient_line_height * len(recipient_lines)
     )
-    height_mm = max(content_height + 2 * PADDING_MM, width_mm)
+    height_mm = max(content_height + 2 * PADDING_MM, MIN_HEIGHT_MM)
 
     pdf = FPDF(unit="mm", format=(width_mm, height_mm))
     pdf.set_margins(0, 0, 0)
@@ -445,7 +446,10 @@ def _prompt_darwin(sender_default):
         if recipient.endswith("\n"):
             recipient = recipient[:-1]
     except ErrorReturnCode as e:
-        if "User canceled" in str(e.stderr, "utf-8", errors="ignore"):
+        # AppleScript's Cancel error is number -128; the message text itself
+        # is localized (not "User canceled" on a non-English system), but the
+        # error number in stderr is not.
+        if "-128" in str(e.stderr, "utf-8", errors="ignore"):
             return None
         raise
 
@@ -501,9 +505,10 @@ def address_label_flow(printer, shouldprint):
         sys.exit(0)  # user canceled, not an error
     sender, recipient = result
 
-    fd, tmp_path = tempfile.mkstemp(suffix="_address.pdf")
-    os.close(fd)
-    tmp_pdf = Path(tmp_path)
+    # A fixed, friendly filename (rather than mkstemp's random one) so the
+    # notification and any kept -noprint output read sensibly.
+    tmp_dir = tempfile.mkdtemp(prefix="magic-zebra-printer-")
+    tmp_pdf = Path(tmp_dir) / "address-label.pdf"
     try:
         try:
             render_address_pdf(sender, recipient, tmp_pdf)
@@ -512,10 +517,14 @@ def address_label_flow(printer, shouldprint):
             die(str(e))
 
         save_sender(sender)
-        return viaPYPDF(str(tmp_pdf), printer, shouldprint)
+        return viaPYPDF(str(tmp_pdf), printer, shouldprint, auto_rotate=False)
     finally:
         if tmp_pdf.exists():
             tmp_pdf.unlink()
+        try:
+            os.rmdir(tmp_dir)  # only succeeds once nothing is left to keep
+        except OSError:
+            pass
 
 
 if __name__ == "__main__":
